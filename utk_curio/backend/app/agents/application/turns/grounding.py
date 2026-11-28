@@ -29,6 +29,7 @@ from utk_curio.backend.app.agents.application.proposals import acquire as agents
 from utk_curio.backend.app.agents.application.proposals import mint as agents_mint
 from utk_curio.backend.app.agents.application.solve import budgets as agents_budgets
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
+from utk_curio.backend.app.agents.domain import content as agents_content
 from utk_curio.backend.app.agents.domain import document_validation
 from utk_curio.backend.app.agents.domain.counts import count_label
 from utk_curio.backend.app.datasets.domain.code_refs import collection_ids_in_code, dataset_ids_in_code
@@ -321,8 +322,10 @@ def _then_sentence(text: str, sentence: str) -> str:
     return f"{text}{'' if text.endswith(('.', '!', '?', '…')) else '.'} {sentence}"
 
 
-def _catalog_rows_for_discovery(user_key: str, project_id: str) -> list[dict]:
-    """The project's Data Catalog rows, resolved WHILE A REQUEST CONTEXT EXISTS.
+def _catalog_rows_for_discovery(user_key: str, project_id: str, *, user=None) -> list[dict]:
+    """The project's Data Catalog rows, resolved WHILE A REQUEST CONTEXT EXISTS,
+    as the request's account lists them, or as *user* when given: the
+    dataflow's owner, whose datasets an editor's pick asks her to add.
 
     dev/126, learned from dev/123's field finding: ``catalog.search`` rides the
     request context (the datasets domain is user-object keyed), and a detached
@@ -335,7 +338,7 @@ def _catalog_rows_for_discovery(user_key: str, project_id: str) -> list[dict]:
     selection, are checked against all of them (:func:`_grounded_catalog_rows`).
     """
     try:
-        return tools._catalog_listing_rows(user_key, project_id, {})
+        return tools._catalog_listing_rows(user_key, project_id, {}, user=user)
     except Exception:  # noqa: BLE001
         log.warning("Data Catalog listing unavailable for project %s", project_id,
                     exc_info=True)
@@ -656,9 +659,14 @@ def _source_resolver(
     extra_texts=(),
     catalog_rows: list | None = None,
     asker=None,
+    lookups=None,
 ):
     """dev/126: the callable the content loop consults BEFORE generating for a
     data-loading node — the one place resolution initiates discovery.
+
+    *lookups* is the lock a Solve batch holds around what its nodes' threads
+    read of the account's store (``SolveBatch.dataset_lookups``): the
+    Dataset Finder's search of the portals reads what the account holds.
 
     Same policy on all three resolution paths (the Solve batch, the per-node
     Solve, Simulation Mode's validate): a node whose source is already
@@ -747,6 +755,7 @@ def _source_resolver(
             )[:2000],
             catalog_rows=catalog_rows,
             asker=asker,
+            lookups=lookups,
         )
         if started["status"] == "awaiting":
             return {"state": "awaiting", "detail": started["detail"],
@@ -781,7 +790,13 @@ def _verify_candidate_parts(parts: list, loop_ctx: dict | None = None) -> None:
     run-budget shape; provider refinements like Socrata add dataset
     name/columns on top of the generic gate, which covers ANY dataset API);
     URL-less rows are loudly UNVERIFIED. The evidence rides the row into the
-    card and the Node Builder handoff."""
+    card and the Node Builder handoff. A source's describe of a row's
+    resource is asked as the loop's asker, the person a Solve's thread runs
+    for, which holds no request, and reads what that person holds under the
+    loop's lookup lock, a Solve batch's, when it gives one
+    (``_LazyRoster.asked_by``). Then each card's rows are ranked by what can
+    be done with them, and its lanes best first
+    (``agents_content.rank_candidates``)."""
     # One budget for the whole pass, spent per real HTTP request rather than
     # per row. The old counter ticked once per candidate while a single row
     # could issue a dozen requests (a Socrata probe fetched twice, and every
@@ -796,7 +811,9 @@ def _verify_candidate_parts(parts: list, loop_ctx: dict | None = None) -> None:
         if loop_ctx is not None
         else egress.CallBudget(agents_budgets.RUN_EGRESS_CALLS)
     )
-    roster = agents_roster._LazyRoster()
+    roster = agents_roster._LazyRoster().asked_by(
+        (loop_ctx or {}).get("asker"), lookups=(loop_ctx or {}).get("lookups"),
+    )
     for part in parts:
         if not isinstance(part, dict) or part.get("type") != "datasetCandidates":
             continue
@@ -818,6 +835,7 @@ def _verify_candidate_parts(parts: list, loop_ctx: dict | None = None) -> None:
                     loop_ctx.setdefault("_verified_urls", {})[url] = row["verification"]
             agents_mint._mint_row_access(row)
             agents_acquire._mint_row_acquirable(row, roster, budget)
+        agents_content.rank_candidates(part)
 
 
 def _grounded_catalog_rows(rows: list, listing: list) -> tuple[list, int]:
@@ -848,26 +866,51 @@ _NO_CANDIDATES_CARD = {
 }
 
 
+def _no_candidates_card(*, under_the_floor: int = 0, not_in_the_catalog: int = 0) -> dict:
+    """The card a candidates card becomes when none of its rows is left,
+    saying why each went: *under_the_floor* rows were rated under the fit a
+    source needs, and the Data Catalog does not hold the datasets
+    *not_in_the_catalog* rows named. With neither counted, the Data Catalog
+    holds none of them."""
+    floor = agents_content.CANDIDATE_MIN_FIT
+    if under_the_floor and not not_in_the_catalog:
+        return {**_NO_CANDIDATES_CARD, "lines": [
+            f"Every dataset this reply proposed was rated under a fit of {floor}: "
+            "none of them holds the data asked for.",
+        ]}
+    if under_the_floor:
+        return {**_NO_CANDIDATES_CARD, "lines": [
+            f"{count_label(under_the_floor, 'dataset')} this reply proposed "
+            f"{'was' if under_the_floor == 1 else 'were'} rated under a fit of {floor}: "
+            "not the data asked for.",
+            f"{count_label(not_in_the_catalog, 'other dataset')} it proposed "
+            f"{'is' if not_in_the_catalog == 1 else 'are'} not in your Data Catalog.",
+        ]}
+    return {**_NO_CANDIDATES_CARD, "lines": list(_NO_CANDIDATES_CARD["lines"])}
+
+
 def _ground_catalog_lanes(parts: list, listing) -> None:
     """A run's own candidates cards, checked as a delegated card is
-    (``delegates._mint_candidates_from_delegate``): a catalog row stays only
-    when the Data Catalog listing holds its dataset, and says installed or not
-    as the listing does (:func:`_grounded_catalog_rows`). A card left with no
-    row is replaced by :data:`_NO_CANDIDATES_CARD`. *listing* returns the
-    listing's rows; it is called once, and only when a card holds a catalog
-    row."""
+    (``delegates._mint_candidates_from_delegate``): a row rated under the fit
+    a source needs goes (``content.drop_under_the_fit_floor``), and a catalog
+    row stays only when the Data Catalog listing holds its dataset, and says
+    installed or not as the listing does (:func:`_grounded_catalog_rows`). A
+    card left with no row is replaced by a card that says why
+    (:func:`_no_candidates_card`). *listing* returns the listing's rows; it is
+    called once, and only when a card holds a catalog row."""
     rows = None
     for index, part in enumerate(parts):
         if not isinstance(part, dict) or part.get("type") != "datasetCandidates":
             continue
         lanes = part.get("lanes") or {}
-        if not lanes.get("catalog"):
-            continue
-        if rows is None:
-            rows = listing()
-        lanes["catalog"], _ = _grounded_catalog_rows(lanes["catalog"], rows)
+        under = agents_content.drop_under_the_fit_floor(part)
+        dropped = 0
+        if lanes.get("catalog"):
+            if rows is None:
+                rows = listing()
+            lanes["catalog"], dropped = _grounded_catalog_rows(lanes["catalog"], rows)
         if not any(lanes.get(lane) for lane in ("catalog", "external")):
-            parts[index] = {**_NO_CANDIDATES_CARD, "lines": list(_NO_CANDIDATES_CARD["lines"])}
+            parts[index] = _no_candidates_card(under_the_floor=under, not_in_the_catalog=dropped)
 
 
 def _run_egress_budget(loop_ctx: dict) -> "egress.CallBudget":

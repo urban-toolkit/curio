@@ -17,6 +17,7 @@ import time
 import tokenize
 
 from utk_curio.backend.app.agents.application import source_grounding
+from utk_curio.backend.app.agents.application import verify
 from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.domain import contracts
 from utk_curio.backend.app.agents.domain import dashboards
@@ -528,7 +529,7 @@ def _endpoint_note(verdict: dict) -> str:
     if status == "verified" and content_type and "json" not in content_type.lower():
         what = agent_text.message("solve.html-page-titled", title=title) if title else f"{content_type.split(';')[0]} content"
         return agent_text.message("solve.endpoint-not-data", what=what, where=where)
-    if status == "unreachable" and verdict.get("httpStatus"):
+    if status in verify.FAILED_STATUSES and verdict.get("httpStatus"):
         said = f': "{sample}"' if sample else (f' ("{title}")' if title else "")
         return agent_text.message("solve.endpoint-status", http_status=verdict['httpStatus'], where=where, said=said)
     return ""

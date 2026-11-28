@@ -17,6 +17,9 @@ same review holds what an editor asks the owner to add to the dataflow from
 his own store, a dataset, a collection, a package or a model
 (``projects/editor_requests.py``), and only the owner applies or dismisses it
 too, refused in the same words (``projects/access.py``, :func:`owners_review`).
+His pick of a Data Catalog dataset the dataflow does not hold is such a
+request, a dataset of the owner's own that a candidates card offered among
+them (``dataset_selection._ask_the_owner``).
 """
 
 from __future__ import annotations

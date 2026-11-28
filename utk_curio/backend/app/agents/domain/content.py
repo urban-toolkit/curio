@@ -500,6 +500,81 @@ def _parse_dataset_candidates(raw: object) -> dict | None:
     return {"type": "datasetCandidates", "lanes": lanes}
 
 
+#: The fit a candidate row needs to be offered: a row its finder rates under it
+#: is no source of the node's data (the map's context, a neighbour of the data),
+#: and is never offered as one. A row with no fit is kept: the floor is the
+#: finder's own rating, and it gave none.
+CANDIDATE_MIN_FIT = 50
+
+
+def _fit_score(row: object) -> float | None:
+    """The fit score *row* carries, or None when it carries none."""
+    fit = row.get("fit") if isinstance(row, dict) else None
+    score = fit.get("score") if isinstance(fit, dict) else None
+    return float(score) if isinstance(score, (int, float)) else None
+
+
+def _under_the_fit_floor(row: object) -> bool:
+    score = _fit_score(row)
+    return score is not None and score < CANDIDATE_MIN_FIT
+
+
+def drop_under_the_fit_floor(part: dict) -> int:
+    """Take the rows of the candidates *part* rated under
+    :data:`CANDIDATE_MIN_FIT` out of its lanes. Returns how many went."""
+    dropped = 0
+    lanes = part.get("lanes") or {}
+    for lane, rows in lanes.items():
+        if isinstance(rows, list):
+            kept = [row for row in rows if not _under_the_fit_floor(row)]
+            dropped += len(rows) - len(kept)
+            lanes[lane] = kept
+    return dropped
+
+
+#: What can be done with a candidate row, best first: Curio downloads it, code
+#: fetches it, the dataflow holds it, the Data Catalog holds it, a person
+#: downloads it from a portal's page, or nothing is known of it. The external
+#: rows' access is the probe's (``verify.classify_access``).
+_ROW_RANKS = {"downloadable": 0, "fetchable": 1, "installed": 2, "catalog": 3, "manual-download": 4}
+_UNKNOWN_RANK = 5
+
+
+def _row_rank(lane: str, row: dict) -> int:
+    if lane == "catalog":
+        return _ROW_RANKS["installed" if row.get("installed") else "catalog"]
+    if row.get("acquirable"):
+        return _ROW_RANKS["downloadable"]
+    return {"fetchable": _ROW_RANKS["fetchable"], "manual-download": _ROW_RANKS["manual-download"]}.get(
+        str(row.get("access") or ""), _UNKNOWN_RANK,
+    )
+
+
+def _row_order(lane: str, row: dict) -> tuple[int, float]:
+    """Where *row* of *lane* goes: by its rank, then its fit, highest first,
+    a row with no fit after every row with one."""
+    score = _fit_score(row)
+    return _row_rank(lane, row), -score if score is not None else 1.0
+
+
+def rank_candidates(part: dict) -> None:
+    """Order the rows of the candidates *part* by what can be done with them
+    (:data:`_ROW_RANKS`), then by their fit, and name its lanes best first,
+    the lane that holds the best row first (``laneOrder``), each lane keeping
+    its own rows. Runs once a card's rows are probed, so their access and
+    whether Curio downloads them are known."""
+    lanes = part.get("lanes") or {}
+    best: dict[str, int] = {}
+    for lane in _CANDIDATE_LANES:
+        rows = lanes.get(lane)
+        if isinstance(rows, list) and rows:
+            rows.sort(key=lambda row, lane=lane: _row_order(lane, row))
+            best[lane] = _row_rank(lane, rows[0])
+    part["laneOrder"] = sorted(
+        _CANDIDATE_LANES, key=lambda lane: (best.get(lane, _UNKNOWN_RANK + 1), _CANDIDATE_LANES.index(lane)),
+    )
+
+
 def _field_error(where: str, value: object, max_chars: int) -> str | None:
     """A precise, model-correctable description of what is wrong, or None."""
     if not isinstance(value, str):

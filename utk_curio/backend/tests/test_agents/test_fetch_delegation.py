@@ -379,10 +379,18 @@ class _FakeDiscovery:
         return self.job
 
 
+def _the_discovery_catalog_is(monkeypatch, fake) -> None:
+    """*fake* stands in for the Discovery Catalog of whoever asks: the
+    request's account, and the person a Solve's thread runs for, whom a
+    card's describes are asked as, whatever lock its reads are made under."""
+    monkeypatch.setattr(acquire, "_discovery_service", lambda **_reads: fake)
+    monkeypatch.setattr(acquire, "_discovery_service_for", lambda user, **_reads: fake)
+
+
 def _discovery_harness(client, user, token, monkeypatch, fake):
     roster = packages_roster._LazyRoster
     monkeypatch.setattr(packages_roster, "_LazyRoster", lambda: roster(dict(ROSTER)))
-    monkeypatch.setattr(acquire, "_discovery_service", lambda: fake)
+    _the_discovery_catalog_is(monkeypatch, fake)
     monkeypatch.setattr(acquire, "_DISCOVERY_APPLY_WAIT_S", 0.2)
     return _await_candidates(client, user, token, monkeypatch,
                              discover_replies=[DISCOVERY_CANDIDATES])
@@ -449,7 +457,7 @@ class TestAnAcquirableRowIsDownloaded:
             "dirName": direct, "provider": "direct",
             "capabilities": {"download": True, "formats": ["csv", "geojson"]},
         }}))
-        monkeypatch.setattr(acquire, "_discovery_service", lambda: fake)
+        _the_discovery_catalog_is(monkeypatch, fake)
         # The Finder's row names only a link: no coordinate was ever proposed.
         h, finder_id = _await_candidates(client, user, token, monkeypatch)
         loader = f'import pandas as pd\nreturn pd.read_csv(curio_data_path("{dataset_id}"))'
@@ -610,7 +618,7 @@ class TestAPlanWaitsAsItsSourceDoes:
         fake = _FakeDiscovery(started={"jobId": "job-1", "status": "queued"}, job={"status": "running"})
         roster = packages_roster._LazyRoster
         monkeypatch.setattr(packages_roster, "_LazyRoster", lambda: roster(dict(ROSTER)))
-        monkeypatch.setattr(acquire, "_discovery_service", lambda: fake)
+        _the_discovery_catalog_is(monkeypatch, fake)
         monkeypatch.setattr(acquire, "_DISCOVERY_APPLY_WAIT_S", 0)
         loader = f'import pandas as pd\nreturn pd.read_csv(curio_data_path("{dataset_id}"))'
         h = _Harness(client, user, token, monkeypatch, discover_replies=[DISCOVERY_CANDIDATES],
@@ -656,7 +664,7 @@ class TestAPlanWaitsAsItsSourceDoes:
         fake = _FakeDiscovery(started={"jobId": "job-1", "status": "queued"}, job={"status": "running"})
         roster = packages_roster._LazyRoster
         monkeypatch.setattr(packages_roster, "_LazyRoster", lambda: roster(dict(ROSTER)))
-        monkeypatch.setattr(acquire, "_discovery_service", lambda: fake)
+        _the_discovery_catalog_is(monkeypatch, fake)
         monkeypatch.setattr(acquire, "_DISCOVERY_APPLY_WAIT_S", 0)
         loader = f'import pandas as pd\nreturn pd.read_csv(curio_data_path("{dataset_id}"))'
         h = _Harness(client, user, token, monkeypatch, discover_replies=[DISCOVERY_CANDIDATES],
@@ -724,15 +732,33 @@ class TestAPlanWaitsAsItsSourceDoes:
         assert done.get("status") == "completed", done
         assert done["builderSession"]["nodeStates"]["load"] == "approved", done["builderSession"]
 
-    def test_a_pick_waiting_for_its_install_says_so_and_the_install_puts_the_row_back(
-        self, client, user_and_token, tmp_curio, monkeypatch
-    ):
-        user, token = user_and_token
-        dataset_id = routes_turns.TestDatasetFinderTools()._seed_dataset(user, filename="wards.csv")
-        candidates = json.dumps({"datasetCandidates": {"lanes": {"external": [], "catalog": [
+    @staticmethod
+    def _catalog_row(dataset_id: str) -> str:
+        return json.dumps({"datasetCandidates": {"lanes": {"external": [], "catalog": [
             {"name": "Community areas", "sourceType": "catalog", "datasetId": dataset_id},
         ]}}})
-        h = _Harness(client, user, token, monkeypatch, discover_replies=[candidates])
+
+    def test_an_editors_pick_waiting_for_its_install_says_so_and_the_owners_apply_puts_the_row_back(
+        self, client, db, user_and_token, tmp_curio, monkeypatch
+    ):
+        """Since step 5.4 the owner's own pick of a Data Catalog dataset the
+        dataflow does not hold adds it at once ("Pick adds it", 11-26), so the
+        pick that waits for its install is an editor's: he asks the owner, as
+        his Add to project does. The pick, the plan's row and its pause say it
+        waits for the install, and the owner's Apply of his request puts the
+        row back. Before step 5.4 the owner's pick waited so, and the
+        Finder's applied dataset.install put it back, which
+        ``test_the_finders_applied_install_puts_a_waiting_row_back`` keeps."""
+        from utk_curio.backend.app.projects import access
+        from utk_curio.backend.tests.test_agents.test_editors_drive_agents import BOB_TOKEN, _account
+
+        alice, alice_token = user_and_token
+        bob = _account(db, "bob", "Bob", BOB_TOKEN)
+        dataset_id = routes_turns.TestDatasetFinderTools()._seed_dataset(bob, filename="wards.csv")
+        h = _Harness(client, alice, alice_token, monkeypatch, discover_replies=[self._catalog_row(dataset_id)])
+        access.add_editor(alice, h.pid, "bob")
+        # Bob drives the build: the Finder lists his Data Catalog for him.
+        h.token = BOB_TOKEN
         h.simulate("auto")
         finder = h.finder_attachment_id()
         r = _select(h, finder, [{"lane": "catalog", "key": dataset_id}])
@@ -742,6 +768,36 @@ class TestAPlanWaitsAsItsSourceDoes:
         assert session["nodeStates"]["load"] == "awaiting-install", session
         message = (session.get("pauseReason") or {}).get("message") or ""
         assert "install" in message and "asks you" not in message, session
+        # The owner applies his request: the dataset is in her dataflow.
+        listed = client.get(f"/api/dataflows/{h.pid}/datasets/requests", headers=_auth(alice_token))
+        assert listed.status_code == 200, listed.get_data(as_text=True)
+        requests = listed.get_json()["requests"]
+        assert [(r["datasetId"], r["nodeIds"]) for r in requests] == [(dataset_id, [h.load])], requests
+        applied = client.post(f"/api/dataflows/{h.pid}/datasets/requests/{requests[0]['proposalId']}/apply",
+                              headers=_auth(alice_token))
+        assert applied.status_code == 200, applied.get_data(as_text=True)
+        assert dr.source_record(h.spec(), h.load)["status"] == dr.STATE_RESOLVED
+        session = _plan_session(h)
+        assert session["nodeStates"]["load"] == "created", session
+        assert "pauseReason" not in session, session
+
+    def test_the_finders_applied_install_puts_a_waiting_row_back(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        """A pick that waits for the install of its dataset, as an editor's
+        does, is put back by the Dataset Finder's own dataset.install once
+        it is applied, as it was before step 5.4."""
+        from utk_curio.backend.tests.test_agents.test_dataset_discovery_routes import (
+            _a_pick_that_waits_for_its_install,
+        )
+
+        user, token = user_and_token
+        dataset_id = routes_turns.TestDatasetFinderTools()._seed_dataset(user, filename="wards.csv")
+        h = _Harness(client, user, token, monkeypatch, discover_replies=[self._catalog_row(dataset_id)])
+        h.simulate("auto")
+        finder = h.finder_attachment_id()
+        _a_pick_that_waits_for_its_install(h, dr.source_record(h.spec(), h.load)["discoveryId"], dataset_id)
+        assert dr.source_record(h.spec(), h.load)["status"] == dr.STATE_AWAITING_INSTALL
         # The Dataset Finder's install of that dataset is applied.
         spec = spec_reads._live_spec_or_404(h.ukey, h.pid)
         record = attachments.get_attachment(spec, finder)
@@ -970,7 +1026,7 @@ class TestSolveThisNodeSaysWhatItsSourceWaitsOn:
         fake = _FakeDiscovery(started={"jobId": "job-1", "status": "queued"}, job={"status": "running"})
         roster = packages_roster._LazyRoster
         monkeypatch.setattr(packages_roster, "_LazyRoster", lambda: roster(dict(ROSTER)))
-        monkeypatch.setattr(acquire, "_discovery_service", lambda: fake)
+        _the_discovery_catalog_is(monkeypatch, fake)
         monkeypatch.setattr(acquire, "_DISCOVERY_APPLY_WAIT_S", 0)
         h = _Harness(client, user, token, monkeypatch, discover_replies=[DISCOVERY_CANDIDATES])
         node_builder = h.node_builder_attachment_id()
@@ -998,7 +1054,7 @@ class TestSolveThisNodeSaysWhatItsSourceWaitsOn:
         fake = _FakeDiscovery(started={"jobId": "job-1", "status": "queued"}, job={"status": "running"})
         roster = packages_roster._LazyRoster
         monkeypatch.setattr(packages_roster, "_LazyRoster", lambda: roster(dict(ROSTER)))
-        monkeypatch.setattr(acquire, "_discovery_service", lambda: fake)
+        _the_discovery_catalog_is(monkeypatch, fake)
         monkeypatch.setattr(acquire, "_DISCOVERY_APPLY_WAIT_S", 0)
         h = _Harness(client, user, token, monkeypatch, discover_replies=[DISCOVERY_CANDIDATES])
         first = h.solve()["results"][h.load]

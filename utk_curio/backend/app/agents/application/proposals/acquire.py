@@ -28,7 +28,11 @@ log = logging.getLogger(__name__)
 def _acquire_format(row: dict) -> str | None:
     """The format to download a confirmed row as, when it can be named: a
     ``direct`` row's from the content type the probe saw, a connector row's
-    from its own ``format`` when that is one the Discovery Catalog accepts."""
+    from its own ``format`` when that is one the Discovery Catalog accepts,
+    else from its link's extension when the link names the row's resource,
+    as a portal's coordinate minted from a link has it: Chicago's
+    ``/resource/x8fc-8rcq.geojson`` downloads as GeoJSON, where the portal's
+    first format is CSV."""
     from utk_curio.backend.app.discovery.domain import formats
     from utk_curio.backend.app.discovery.domain.manifest import DISCOVERY_ACQUIRABLE_FORMATS
 
@@ -38,7 +42,23 @@ def _acquire_format(row: dict) -> str | None:
     if probed and row.get("resourceId") == row.get("url"):
         return probed
     named = str(row.get("format") or "").strip().lower()
-    return named if named in DISCOVERY_ACQUIRABLE_FORMATS else None
+    if named in DISCOVERY_ACQUIRABLE_FORMATS:
+        return named
+    linked = formats.link_format(row.get("url")) if _link_names_its_resource(row) else None
+    return linked if linked in DISCOVERY_ACQUIRABLE_FORMATS else None
+
+
+def _link_names_its_resource(row: dict) -> bool:
+    """Whether *row*'s link names its resource: a provider's recogniser finds
+    the row's ``resourceId`` in it, as ``_LazyRoster.portal_coordinate``
+    finds the dataset id a link's coordinate is minted with. A link to
+    another file says nothing of the resource's format."""
+    from utk_curio.backend.app.discovery.providers import RECOGNISERS
+
+    url, resource_id = str(row.get("url") or ""), row.get("resourceId")
+    return bool(url and resource_id) and any(
+        provider.recognize(url) == resource_id for provider in RECOGNISERS
+    )
 
 
 def _acquire_confirmed_picks(rows: list[dict]) -> list[dict]:
@@ -125,47 +145,76 @@ def _acquisition_outcome(acquisitions: list[dict], *,
 
 
 def _settle_discovery_acquisitions(user_key: str, project_id: str) -> None:
-    """Resolve nodes whose confirmed download has landed since it was confirmed.
+    """Resolve nodes whose confirmed pick has come since it was confirmed: a
+    download that landed, or a dataset the dataflow holds now that a pick
+    waited for the install of, however it was added (Add to project, the
+    owner's Apply of an editor's request).
 
-    Called at a Solve's entry, while the request's user can read the datasets
-    domain (a detached job cannot). Reads the spec first, so a project with no
-    download in flight costs one read. A plan that waited for such a node's
-    download goes on with it (``simulation.follow_the_sources``): a running
-    Build & validate builds it, or the next one does.
+    Called at the entry of a Solve, Solve this node and each validation of a
+    plan's node (Build & validate, Resume, a row's Solve), while the request's
+    user can read the datasets domain (a detached job cannot); an install
+    needs only the dataflow. Reads the spec first, so a project with nothing
+    to settle costs one read. A plan that waited for such a node goes on with
+    it (``simulation.follow_the_sources``): a running Build & validate builds
+    it, or the next one does.
     """
 
     spec = projects_storage.read_spec(user_key, project_id)
-    if not agents_dataset_resolution.has_acquiring_picks(spec):
+    downloading = agents_dataset_resolution.has_acquiring_picks(spec)
+    installed = bool(agents_dataset_resolution.installs_awaited(spec) & agents_dataset_resolution.held_datasets(spec))
+    if not downloading and not installed:
         return
+    held = _held_discovery_resources(project_id) if downloading else {}
+    with projects_storage.spec_write_lock(user_key, project_id):
+        fresh = dataflow_docs.live(user_key, project_id)
+        if fresh is None:
+            return
+        changed = agents_dataset_resolution.settle_acquisitions(fresh, held) if held else []
+        changed += agents_dataset_resolution.settle_installs(fresh)
+        if changed:
+            agents_simulation.follow_the_sources(user_key, fresh)
+            dataflow_docs.write(user_key, project_id, fresh, dataflow_docs.by_curio(user_key, "dataset"))
+
+
+def _held_discovery_resources(project_id: str) -> dict:
+    """What the acting user's store holds from the Discovery Catalog, by
+    ``(sourceId, resourceId)``; empty with no request's user, or a store that
+    cannot be read."""
     user = agents_spec_reads._acting_user()
     if user is None:
-        return
+        return {}
     try:
         from utk_curio.backend.app.datasets.repositories.user_store import (
             UserDatasetRepository,
         )
 
-        held = UserDatasetRepository(user).discovery_resource_index()
+        return UserDatasetRepository(user).discovery_resource_index()
     except Exception:  # noqa: BLE001 - an unreadable store settles nothing
         log.warning("Could not read the held Discovery Catalog datasets for project %s",
                     project_id, exc_info=True)
-        return
-    with projects_storage.spec_write_lock(user_key, project_id):
-        fresh = dataflow_docs.live(user_key, project_id)
-        if fresh is not None and agents_dataset_resolution.settle_acquisitions(fresh, held):
-            agents_simulation.follow_the_sources(user_key, fresh)
-            dataflow_docs.write(user_key, project_id, fresh, dataflow_docs.by_curio(user_key, "dataset"))
+        return {}
 
 
-def _discovery_service():
+def _discovery_service(*, store_reads=None):
+    """The Discovery Catalog of the request's account (*store_reads* as
+    :func:`_discovery_service_for` takes it)."""
     from flask import g
 
+    return _discovery_service_for(getattr(g, "user", None), store_reads=store_reads)
+
+
+def _discovery_service_for(user, *, store_reads=None):
+    """The Discovery Catalog of *user*: the request's account, or the person
+    a job's thread runs for, which holds no request (a Solve's
+    ``acting_user``). A portal's rate limit and token are that account's. Its
+    reads of what the account holds are made under *store_reads* when given:
+    the lock a Solve batch's threads take around such reads
+    (``SolveBatch.dataset_lookups``)."""
     from utk_curio.backend.app.discovery.service import DiscoveryService
     from utk_curio.backend.app.projects.services import _user_dir_key
 
-    user = getattr(g, "user", None)
     return DiscoveryService(
-        _user_dir_key(user) if user is not None else None, user=user
+        _user_dir_key(user) if user is not None else None, user=user, store_reads=store_reads,
     )
 
 
@@ -408,26 +457,50 @@ def _mint_row_acquirable(row: dict, roster: "_LazyRoster", budget=None) -> None:
       run's web budget, when one is given. The connector knows how to fetch
       the resource, so the probe of a landing page does not decide it. Once
       the budget is spent the source is not asked: the row keeps its
-      coordinate, unconfirmed, and is not acquirable (:func:`_unconfirmed`).
+      coordinate, unconfirmed, and is not acquirable (:func:`_unconfirmed`),
+      as it does when the source gave no answer (:func:`_source_describes`:
+      a rate limit, a portal not reached or answering 408, 429 or a 5xx).
     - A ``direct`` source downloads the URL itself, so the probe decides: an
       https URL the probe read as data, whose content type maps to a format the
       source accepts or which is a zip or a gzip the download unpacks, and
       whose ``resourceId`` is that same URL, so what is downloaded is what was
       probed.
 
-    A row with a plain link and no coordinate is tried as a ``direct`` row: the
-    coordinate is minted here, after parsing, so it is never model-supplied and
-    never meets the parser's length cap. A coordinate, minted or the model's,
-    stays only when the row qualifies or the source was not asked, so one the
-    source refused never reaches a download, a builder or a file's provenance.
-    A downloadable row offers that and nothing else, so it carries no portal
-    steps.
+    A row with a plain link and no coordinate gets one minted here, after
+    parsing, so it is never model-supplied and never meets the parser's length
+    cap: first its portal's, when the link is on a portal of the roster,
+    names a dataset id its provider takes and asks for nothing more of it (no
+    query; ``_LazyRoster.portal_coordinate``), which Curio downloads whole
+    through the portal's own export; then a ``direct`` one, which downloads
+    the link as it is, tried when the portal refused its coordinate. A
+    coordinate, minted or the model's, stays only when the row qualifies or
+    the source did not answer for it (not asked, or no answer), so one the
+    source refused never reaches a download, a builder or a file's
+    provenance. A portal's coordinate left unconfirmed, by the spent web
+    budget or a portal that gave no answer, stays, as a copied one does, and
+    the pick asks the portal with a budget of its own, rather than the link
+    alone, which can answer less than the export (a Socrata link with no
+    ``$limit`` answers its first 1,000 rows). A downloadable row offers that
+    and nothing else, so it carries no portal steps.
     """
     row.pop("acquirable", None)
-    if not (row.get("sourceId") and row.get("resourceId")) and str(row.get("url") or "").startswith("https://"):
-        direct = roster.direct()
-        if direct:
-            row["sourceId"], row["resourceId"] = direct, row["url"]
+    url = str(row.get("url") or "")
+    if (row.get("sourceId") and row.get("resourceId")) or not url.startswith("https://"):
+        _keep_if_acquirable(row, roster, budget)
+        return
+    direct = roster.direct()
+    for coordinate in (roster.portal_coordinate(url), (direct, url) if direct else None):
+        if coordinate is None:
+            continue
+        row["sourceId"], row["resourceId"] = coordinate
+        if _keep_if_acquirable(row, roster, budget) is not False:
+            return
+
+
+def _keep_if_acquirable(row: dict, roster: "_LazyRoster", budget=None) -> bool | None:
+    """Mark *row* acquirable, or take its coordinate off when its source
+    refused it; a coordinate its source did not answer for (not asked, or no
+    answer) stays. Returns :func:`_acquirable`'s verdict."""
     verdict = _acquirable(row, roster, budget)
     if verdict:
         row["acquirable"] = True
@@ -435,13 +508,14 @@ def _mint_row_acquirable(row: dict, roster: "_LazyRoster", budget=None) -> None:
     elif verdict is not None:
         row.pop("sourceId", None)
         row.pop("resourceId", None)
+    return verdict
 
 
 def _unconfirmed(rows: list) -> int:
-    """How many of *rows* keep a Discovery coordinate the source was not asked
-    to confirm, the run's web budget being spent: after
-    :func:`_mint_row_acquirable`, every row with a coordinate that is not
-    acquirable."""
+    """How many of *rows* keep a Discovery coordinate the source did not
+    confirm, not asked, the run's web budget being spent, or giving no answer
+    (:func:`_source_describes`): after :func:`_mint_row_acquirable`, every
+    row with a coordinate that is not acquirable."""
     return sum(
         1 for row in rows or []
         if isinstance(row, dict) and row.get("sourceId") and row.get("resourceId")
@@ -449,14 +523,30 @@ def _unconfirmed(rows: list) -> int:
     )
 
 
-def _source_describes(dir_name: str, resource_id: str) -> bool:
+def _source_describes(dir_name: str, resource_id: str, asker=None, lookups=None) -> bool | None:
     """Whether the Discovery Catalog describes *resource_id* of the source
-    *dir_name*, through the acting user's service: the call a
-    ``discovery.acquire`` proposal is grounded in. A describe that fails, for
-    a resource the source does not have or for any other reason, is a no."""
+    *dir_name*: the call a ``discovery.acquire`` proposal is grounded in,
+    asked as *asker* when given, the person a Solve's thread runs for, else
+    as the request's account. A describe asked as no one would share one rate
+    limit per portal with every other and send no token. Its read of what
+    that account holds of the resource is made under *lookups* when given,
+    the Solve batch's lock on such reads (``SolveBatch.dataset_lookups``).
+
+    A describe that fails is a no, but one that got no answer is None
+    (the failure's ``unanswered``: Curio's rate limit for the account refused
+    it, or the portal could not be reached or answered 408, 429 or a 5xx):
+    the resource is unconfirmed, as when the run's web budget is spent, and
+    confirming its row asks the source again. A portal that answered, a 404
+    for an id it does not have among other answers, answered no."""
     try:
-        _discovery_service().describe_resource(dir_name, resource_id)
+        service = (_discovery_service_for(asker, store_reads=lookups) if asker is not None
+                   else _discovery_service(store_reads=lookups))
+        service.describe_resource(dir_name, resource_id)
     except Exception as exc:  # noqa: BLE001 - an unconfirmed resource is not offered, never a run error
+        if getattr(exc, "unanswered", False):
+            log.info("%s gave no answer for %s (%s): the row keeps its coordinate, unconfirmed",
+                     dir_name, resource_id, exc)
+            return None
         log.info("%s did not describe %s (%s): the row is not offered for download",
                  dir_name, resource_id, exc)
         return False
@@ -465,7 +555,8 @@ def _source_describes(dir_name: str, resource_id: str) -> bool:
 
 def _acquirable(row: dict, roster: "_LazyRoster", budget=None) -> bool | None:
     """Whether Curio can download *row*: True or False, or None for a
-    connector row whose source was not asked, the budget being spent."""
+    connector row whose source did not answer for it: not asked, the budget
+    being spent, or giving no answer (:func:`_source_describes`)."""
     source = roster.get(row.get("sourceId")) if row.get("resourceId") else None
     # A storage source (a folder, a bucket, a dataset repository) is added from
     # the Discovery Catalog page, and a service downloads for an area set there:

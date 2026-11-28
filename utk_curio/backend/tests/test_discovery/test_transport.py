@@ -88,6 +88,21 @@ class TestFixtureLookup:
         with pytest.raises(T.DiscoveryTransportError, match="timeout"):
             t.json_get("https://portal.example/slow")
 
+    @pytest.mark.parametrize("url, unanswered", [
+        ("https://portal.example/boom", True),
+        ("https://portal.example/slow", True),
+        ("https://portal.example/never", False),
+    ])
+    def test_a_recorded_failure_says_whether_the_portal_answered(self, corpus, url, unanswered):
+        """As the real transport says it: a recorded 500 and a recorded
+        transport error are no answer this time. A URL the corpus never
+        recorded is no transport failure, so a describe of a resource the
+        corpus does not hold is refused, as a portal's 404 is."""
+        t = T.FixtureDiscoveryTransport(corpus)
+        with pytest.raises(T.DiscoveryTransportError) as raised:
+            t.json_get(url)
+        assert raised.value.unanswered is unanswered, raised.value
+
 
 class TestFixtureDownload:
     def test_it_writes_to_the_sink_and_hashes(self, corpus):
@@ -296,6 +311,31 @@ class TestTheRealTransport:
         T.HttpDiscoveryTransport().get_page("https://portal.example/api/x", credential=self.KEY)
         assert fake.sent[0][1]["X-App-Token"] == "s3cr3t-value-0123"
         assert "X-App-Token" not in fake.sent[1][1]
+
+    @pytest.mark.parametrize("status, unanswered", [
+        (403, False), (404, False), (408, True), (429, True), (500, True), (503, True),
+    ])
+    def test_an_error_answer_says_whether_it_was_an_answer(self, wire, status, unanswered):
+        """A 404 is the portal's answer; a 408, a 429 or a 5xx is no answer
+        this time, which asking again later may get. A Dataset Finder row's
+        describe reads which (``proposals.acquire._source_describes``)."""
+        url = "https://portal.example/api/views/abcd-1234.json"
+        wire({url: (status, {"Content-Type": "application/json"}, b'{"error": true}')})
+        with pytest.raises(T.DiscoveryTransportError, match=f"answered {status}") as raised:
+            T.HttpDiscoveryTransport().get_page(url)
+        assert raised.value.unanswered is unanswered
+
+    def test_a_portal_never_reached_gave_no_answer(self, wire, monkeypatch):
+        """``wire`` answers the policy's name lookup; the connection fails."""
+        import requests
+
+        def _refused(method, url, **kwargs):
+            raise requests.ConnectionError("connection refused")
+
+        monkeypatch.setattr(requests, "request", _refused)
+        with pytest.raises(T.DiscoveryTransportError, match="could not reach") as raised:
+            T.HttpDiscoveryTransport().get_page("https://portal.example/api/views/abcd-1234.json")
+        assert raised.value.unanswered is True
 
     @pytest.mark.parametrize("status", [401, 403, 404, 500])
     def test_a_download_that_answers_an_error_is_refused(self, wire, status):

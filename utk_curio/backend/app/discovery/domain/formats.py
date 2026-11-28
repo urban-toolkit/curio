@@ -215,6 +215,12 @@ def _suffix_format(name: str | None) -> str | None:
     return SUPPORTED_SUFFIXES.get(suffix)
 
 
+def link_format(url: str | None) -> str | None:
+    """The format the extension of *url*'s path names, as :func:`resolve_format`
+    reads a final URL's: ``.../resource/x8fc-8rcq.geojson`` is ``geojson``."""
+    return _suffix_format(posixpath.basename(urlparse(str(url or "")).path or ""))
+
+
 def _sniff(head: bytes) -> str | None:
     """Last resort: what do the first bytes look like?"""
     if not head:
