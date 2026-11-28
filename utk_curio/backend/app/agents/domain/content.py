@@ -411,17 +411,24 @@ def _bounded_str(value: object, max_chars: int) -> str | None:
 
 
 def _fitted_text(value: object, max_chars: int) -> str | None:
-    """A non-empty free-text string, cut on a word with an ellipsis to fit
-    *max_chars* when it runs past it (``labels.fit``), or None when it is no
-    string or empty. A candidate row's words about its data (who publishes it,
-    its format, coverage and requirement, why it fits) are shown, never acted
+    """A non-empty free-text string as a row shows it: whole when it fits
+    *max_chars*, else cut after its last whole word that fits, with an
+    ellipsis (``labels.on_a_word``), and "" when not even its first word
+    fits, so no word is ever cut in the middle. None when it is no string or
+    empty. A candidate row's words about its data (who publishes it, its
+    format, coverage and requirement, why it fits) are shown, never acted
     on: one too long for its bound is shortened, where an over-long name, id
     or link still voids its row. On dev the 100-year loader's Finder gave the
     right dataset a 179-character reason, and the whole card went."""
     if not isinstance(value, str):
         return None
     text = value.strip()
-    return labels.fit(text, max_chars) if text else None
+    if not text:
+        return None
+    if len(text) <= max_chars:
+        return text
+    cut = labels.on_a_word(text, max_chars - 1)
+    return cut if len(cut) <= max_chars else ""
 
 
 def _parse_candidate_row(raw: object, lane: str) -> dict | None:
@@ -449,7 +456,8 @@ def _parse_candidate_row(raw: object, lane: str) -> dict | None:
             text = _fitted_text(raw.get(key), _CANDIDATE_TEXT_MAX_CHARS)
             if text is None:
                 return None
-            row[key] = text
+            if text:
+                row[key] = text
     fit = raw.get("fit")
     if fit is not None:
         if not isinstance(fit, dict):

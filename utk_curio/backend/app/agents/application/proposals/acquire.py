@@ -127,11 +127,13 @@ def _portal_title(row: dict, roster: "_LazyRoster | None" = None) -> str | None:
     """What a confirmed row's download is titled in the Data Catalog: the
     title its portal gives the resource, which the describe that confirmed
     the row answered (``_LazyRoster.described_name``), as the Discovery
-    Catalog page's Download names a portal's dataset after the row it shows
-    rather than after the remote file ("x8fc-8rcq.geojson"); else the row's
-    own name, for a link Direct URL downloads."""
+    Catalog page's Download names a portal's dataset after the row it shows,
+    the portal's own, not after the remote file ("x8fc-8rcq.geojson"). None
+    when no portal described it, as for a link Direct URL downloads: the
+    download names itself after its file, as the page's pasted link does.
+    The row's own name, which the model wrote, never titles a dataset."""
     named = roster.described_name(row.get("sourceId"), row.get("resourceId")) if roster is not None else None
-    return str(named or row.get("name") or "").strip() or None
+    return str(named or "").strip() or None
 
 
 def _add_to_the_dataflow(user, project_id: str, rows: list[dict]) -> tuple[dict, Exception] | None:

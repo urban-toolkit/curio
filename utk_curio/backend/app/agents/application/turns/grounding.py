@@ -1291,6 +1291,7 @@ def _gate_generated_content(
     node_id: str | None = None,
     widgets: list | None = None,
     current: str | None = None,
+    tie_to: tuple | None = None,
 ) -> tuple["source_grounding.GroundingVerdict", str | None]:
     """The ONE call every agent-authored-content boundary makes (dev/114):
     ``(verdict, refusal_text | None)``. The refusal is model-correctable
@@ -1298,7 +1299,9 @@ def _gate_generated_content(
     the node's code runs in (``source_grounding.code_engine``), None for
     content that is no code, which is read as a document; *chips*, what a
     run resolves the node's chips with (:func:`_chip_context`); *current*,
-    the content the node holds now, the user's own. Content whose
+    the content the node holds now, the user's own; *tie_to*, ``(spec,
+    node)`` for a Solve's write, which holds a loader with a Dataset Finder
+    of its own to the datasets tied to it (:func:`datasets_tied_to`). Content whose
     sources are grounded and that is a chart's or a map's document is then
     checked as Solve checks one (:func:`_document_refusal`), for *node_id*'s
     saved node, or for the node a node.create adds with the *widgets* it
@@ -1310,6 +1313,8 @@ def _gate_generated_content(
         request_texts=request_texts, requested_ids=requested_ids, code_engine=code_engine, chips=chips,
         current=current,
     )
+    if tie_to is not None:
+        ctx.tied = datasets_tied_to(tie_to[0], tie_to[1], ctx, user_key=user_key)
     verdict = source_grounding.check_grounding(code, code_engine or "python", ctx)
     if not verdict.ok:
         return verdict, source_grounding.refusal_text(verdict, ctx)

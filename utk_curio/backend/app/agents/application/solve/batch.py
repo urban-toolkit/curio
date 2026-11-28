@@ -646,6 +646,9 @@ class SolveBatch:
             # The code the node holds is the user's own: a call in it that
             # makes values up is not one the new content adds.
             current=str(node.get("content") or ""),
+            # A loader with a Dataset Finder of its own reads only a dataset
+            # tied to it, as the verified loop holds it to.
+            tie_to=(self.current["spec"], node),
         )
         if refusal is None:
             return None
@@ -1420,13 +1423,15 @@ class SolveBatch:
         # dev/114: the seventh DEC-063 application — a data-
         # loading child is HANDED its grounded sources.
         if self.is_data_loading(node):
-            inputs["sourceGrounding"] = agents_grounding._source_grounding_inputs(
-                agents_grounding._grounding_context(
-                    self.user_key, self.project_id, self.solve_ctx,
-                    node_type=node.get("type"), base=self.solve_ground,
-                    extra_texts=(str(node.get("goal") or ""),), is_data_loading=True,
-                )
+            ctx = agents_grounding._grounding_context(
+                self.user_key, self.project_id, self.solve_ctx,
+                node_type=node.get("type"), base=self.solve_ground,
+                extra_texts=(str(node.get("goal") or ""),), is_data_loading=True,
             )
+            # A loader with a Dataset Finder of its own is handed only the
+            # datasets tied to it, as the verified loop hands them.
+            ctx.tied = agents_grounding.datasets_tied_to(wave_spec, node, ctx, user_key=self.user_key)
+            inputs["sourceGrounding"] = agents_grounding._source_grounding_inputs(ctx)
         return inputs
 
     def _traced_runner(self, node_id: str):

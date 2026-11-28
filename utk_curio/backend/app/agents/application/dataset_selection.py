@@ -230,37 +230,67 @@ def settle_source_waits(user_key: str, project_id: str) -> None:
     ``when_applied``), whose Apply calls it with the dataflow's owner key.
 
     Her Apply starts no build: it approves adding the dataset, not spending
-    a build. A plan that waited for a node whose source an editor picked
-    goes on as after a direct pick, from his tab: the Finder's record keeps
-    how (:func:`_keep_how_the_plan_goes_on`), which his tab takes once
+    a build. What waited for a node whose source an editor picked goes on as
+    after his own pick, from his tab: the Finder's record keeps how
+    (:func:`_keep_how_it_goes_on`), which his tab takes once
     (:func:`claim_goes_on`)."""
+    waiting = _waiting_for_the_owner(user_key, project_id)
     moved = agents_acquire._settle_discovery_acquisitions(user_key, project_id) or []
-    released = [entry for entry in moved if entry.get("state") == "created" and entry.get("nodeId")]
-    if released:
-        _keep_how_the_plan_goes_on(user_key, project_id, released)
+    if waiting:
+        _keep_how_it_goes_on(user_key, project_id, waiting, moved)
 
 
-def _keep_how_the_plan_goes_on(user_key: str, project_id: str, released: list[dict]) -> None:
-    """For each plan node *released* (``simulation.follow_the_sources``'
-    entries, put back to ``created``) whose source is the pick of an editor
-    that waited for the owner (``pickedBy``), the Finder's record keeps how
-    the plan goes on (``goesOn``): the answer a direct pick gives
-    (:func:`_plan_waiting`), which his tab takes, and its sentence as what
-    comes of the pick (``next``). A plan whose Build & validate runs now
-    builds the node itself and needs none."""
+#: The status of a go-on outside a plan (``goesOn``): the node's builder writes
+#: the loader, as a direct pick outside a plan starts it
+#: (:func:`_delegate_confirmed_fetch`); and what it says.
+BUILDS_THE_NODE = "builds-the-node"
+_THE_BUILDER_WRITES_IT = "the node's builder writes the loader from this source"
+
+
+def _waiting_for_the_owner(user_key: str, project_id: str) -> dict[str, str]:
+    """Each Dataset Finder whose record waits for the install of an editor's
+    pick (``pickedBy``), with its node's id: read before an Apply's settle,
+    so that a go-on is kept for the picks the Apply ends, and no other."""
+    waiting: dict[str, str] = {}
+    for record in attachments.list_attachments(projects_storage.read_spec(user_key, project_id) or {}):
+        state = record.get(agents_dataset_resolution.RECORD_KEY)
+        target = record.get("target") or {}
+        if (isinstance(state, dict) and state.get("pickedBy")
+                and state.get("status") == agents_dataset_resolution.STATE_AWAITING_INSTALL
+                and target.get("kind") == "node" and target.get("targetId")):
+            waiting[str(record.get("attachmentId"))] = str(target["targetId"])
+    return waiting
+
+
+def _keep_how_it_goes_on(user_key: str, project_id: str, waiting: dict[str, str], moved: list[dict]) -> None:
+    """For each pick of an editor the owner's Apply ended (*waiting*, by its
+    Finder, before the settle), the Finder's record keeps how what waited for
+    the node goes on (``goesOn``), which his tab takes, and its sentence as
+    what comes of the pick (``next``): the answer a direct pick gives,
+    :func:`_plan_waiting`'s, for a plan node the settle put back to
+    ``created`` (*moved*, ``simulation.follow_the_sources``' entries), or,
+    with no plan waiting for the node, the node's builder starting, as a
+    direct pick outside a plan starts it. A plan whose Build & validate runs
+    now builds the node itself, and needs none."""
     with projects_storage.spec_write_lock(user_key, project_id):
         fresh = dataflow_docs.live(user_key, project_id)
         if fresh is None:
             return
         kept = False
-        for entry in released:
-            finder = agents_dataset_resolution.finder_attachment(fresh, entry["nodeId"], user_key=user_key)
+        for finder_id, node_id in waiting.items():
+            finder = attachments.get_attachment(fresh, finder_id)
             state = (finder or {}).get(agents_dataset_resolution.RECORD_KEY)
             if not (isinstance(state, dict) and state.get("pickedBy")
                     and state.get("status") == agents_dataset_resolution.STATE_RESOLVED):
                 continue
-            goes_on = _plan_waiting(user_key, entry["nodeId"], entry)
-            if not goes_on["continueWith"]:
+            released = next((m for m in moved if m.get("nodeId") == node_id and m.get("state") == "created"), None)
+            if released is not None:
+                goes_on = _plan_waiting(user_key, node_id, released)
+                if not goes_on["continueWith"]:
+                    continue
+            elif agents_simulation.plan_waiting_on(fresh, node_id) is None:
+                goes_on = {"status": BUILDS_THE_NODE, "nodeId": node_id, "reason": _THE_BUILDER_WRITES_IT}
+            else:
                 continue
             state["goesOn"] = goes_on
             state["next"] = _sentence(goes_on["reason"])
@@ -278,9 +308,14 @@ def claim_goes_on(user_key: str, project_id: str, attachment_id: str) -> dict | 
     it as after his own pick. The record's ``goesOn`` waits for that tab, if
     it was closed when she applied, and goes as it is answered.
 
+    Outside a plan (``builds-the-node``), the node's builder starts from his
+    request, as a direct pick outside a plan starts it, through the same
+    :func:`_delegate_confirmed_fetch`, whose answer (``delegating``) this is.
+
     None for any other account, which takes nothing; and None, the record's
-    ``goesOn`` taken off, once the plan went on without it: its node built or
-    waiting again, or a Build & validate or the row's Solve running on it."""
+    ``goesOn`` taken off, once it went on without it: the plan's node built or
+    waiting again, or a Build & validate or the row's Solve running on it; a
+    node outside a plan given code meanwhile."""
     account = str(getattr(agents_spec_reads._acting_user(), "id", "") or "")
     with projects_storage.spec_write_lock(user_key, project_id):
         fresh = agents_spec_reads._live_spec_or_404(user_key, project_id)
@@ -291,9 +326,27 @@ def claim_goes_on(user_key: str, project_id: str, attachment_id: str) -> dict | 
             return None
         state.pop("goesOn")
         record["revision"] = int(record.get("revision", 1)) + 1
-        still = _still_waits_to_go_on(fresh, goes_on)
+        outside = goes_on.get("status") == BUILDS_THE_NODE
+        still = _node_waits_for_its_builder(fresh, goes_on) if outside else _still_waits_to_go_on(fresh, goes_on)
+        picks = [dict(pick) for pick in state.get("picks") or [] if isinstance(pick, dict)]
+        resolved = dict(state)
         dataflow_docs.write(user_key, project_id, fresh, agents_spec_reads._person(user_key, "dataset"))
-    return goes_on if still else None
+    if not still:
+        return None
+    if outside:
+        return _delegate_confirmed_fetch(user_key, project_id, str(goes_on.get("nodeId") or ""), picks, resolved)
+    return goes_on
+
+
+def _node_waits_for_its_builder(spec: dict, goes_on: dict) -> bool:
+    """Whether the node of a go-on outside a plan (*goes_on*'s ``nodeId``)
+    still waits for its builder: it holds no code yet, and no plan waits for
+    it."""
+    node_id = goes_on.get("nodeId")
+    node = next((n for n in (spec.get("dataflow") or {}).get("nodes") or []
+                 if isinstance(n, dict) and n.get("id") == node_id), None)
+    return (node is not None and not str(node.get("content") or "").strip()
+            and agents_simulation.plan_waiting_on(spec, str(node_id)) is None)
 
 
 def _still_waits_to_go_on(spec: dict, goes_on: dict) -> bool:
@@ -446,14 +499,14 @@ def _add_outcome(user_key: str, added: dict | None, waiting_plan: dict | None, n
 
 def _once_it_is_added(user_key: str, node_id: str, waiting_plan: dict | None) -> str:
     """What builds the loader once the dataflow's owner adds the dataset an
-    editor's pick asked her for: the plan that waits for the node goes on as
-    after a direct pick, in its words (:func:`_plan_waiting`), from the tab of
-    the editor who picked, which takes it whenever it is open once her Apply
-    landed (:func:`claim_goes_on`); outside a plan, the node's Solve. No
-    control a plan line may not show is named: her Apply ends the pause, and
-    Resume with it."""
+    editor's pick asked her for, from the tab of the editor who picked, which
+    takes it whenever it is open once her Apply landed (:func:`claim_goes_on`):
+    the plan that waits for the node goes on as after a direct pick, in its
+    words (:func:`_plan_waiting`); outside a plan, the node's builder writes
+    the loader, as a direct pick outside a plan has it. No control is named:
+    her Apply ends a plan's pause, and Resume with it."""
     if not waiting_plan:
-        return "Solve the node once it is added"
+        return f"once it is added, {_THE_BUILDER_WRITES_IT}"
     return "once it is added, " + _plan_waiting(user_key, node_id, waiting_plan)["reason"]
 
 
