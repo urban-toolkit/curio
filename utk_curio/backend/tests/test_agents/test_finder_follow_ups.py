@@ -207,6 +207,41 @@ class TestTheOwnersApplyLetsThePlanGoOn:
         assert f'curio_load_data("{dataset_id}")' in h.node_content(h.load)
         assert _goes_on(h, BOB_TOKEN) == {}
 
+    def test_outside_a_plan_his_tab_has_the_loaders_builder_write_it(
+        self, client, db, user_and_token, tmp_curio, monkeypatch
+    ):
+        """No plan waited for the loader: Bob's Solve this node asked its
+        Finder. A direct pick outside a plan starts the node's builder; once
+        the owner adds the dataset Bob picked, his tab's take starts it,
+        through the same code, and his pick said so, naming no control. On
+        main it told him to Solve the node, in a chat that has no Solve."""
+        from utk_curio.backend.app.projects import access
+        from utk_curio.backend.tests.test_agents.test_dataset_discovery_routes import _solve_this_node
+        from utk_curio.backend.tests.test_agents.test_fetch_delegation import _drain
+
+        alice, alice_token = user_and_token
+        bob = _account(db, "bob", "Bob", BOB_TOKEN)
+        dataset_id = _a_dataset(bob, "Library branches")
+        h = _Harness(client, alice, alice_token, monkeypatch,
+                     discover_replies=[_catalog_reply((dataset_id, "Library branches", 90, "the branches"))],
+                     dl_replies=[_reads(dataset_id)])
+        access.add_editor(alice, h.pid, "bob")
+        h.token = BOB_TOKEN
+        assert _solve_this_node(h, h.node_builder_attachment_id()).get("verdict") == "awaiting-source"
+        picked = _select(h, h.finder_attachment_id(), [{"lane": "catalog", "key": dataset_id}])
+        assert picked.status_code == 200, picked.get_data(as_text=True)
+        reason = (picked.get_json().get("delegated") or {}).get("reason") or ""
+        assert "once it is added, the node's builder writes the loader" in reason, reason
+        assert "Solve" not in reason and "Resume" not in reason, reason
+        _the_owner_applies(client, h, alice_token)
+        assert _goes_on(h, alice_token) == {}
+        delegated = _goes_on(h, BOB_TOKEN)
+        assert (delegated.get("status"), delegated.get("nodeId")) == ("delegating", h.load), delegated
+        events = _drain(h, delegated["attachmentId"])
+        assert next(p for k, p in events if k == "done")["verdict"] == "pass"
+        assert f'curio_load_data("{dataset_id}")' in h.node_content(h.load)
+        assert _goes_on(h, BOB_TOKEN) == {}
+
     def test_the_pick_says_the_plan_goes_on_once_it_is_added_and_names_no_control(
         self, client, db, user_and_token, tmp_curio, monkeypatch
     ):
@@ -259,6 +294,19 @@ class TestAFieldOverItsLimitIsCutNotTheCard:
             body = cut[:-1]
             assert whole.startswith(body) and not whole[len(body)].isalnum(), f"{cut!r} halves a word"
 
+    def test_a_field_whose_first_word_alone_passes_its_limit_is_left_empty_never_cut(self):
+        """One word longer than the bound, such as a long link, cannot be cut
+        on a word: the field is left out of the row (a reason, empty), and the
+        row stays, with no word cut in the middle."""
+        token = "https://data.example.org/" + "peaks" * 40
+        row = {"name": "Storm peaks", "sourceType": "catalog", "datasetId": "imported.peaks",
+               "coverage": token, "fit": {"score": 97, "rationale": token}}
+        parsed = content._parse_dataset_candidates({"lanes": {"catalog": [row], "external": []}})
+        assert parsed is not None, "one word over its limit voided the card"
+        [kept] = parsed["lanes"]["catalog"]
+        assert kept["fit"] == {"score": 97, "rationale": ""}, kept
+        assert "coverage" not in kept, kept
+
     def test_a_chats_own_block_with_a_reason_over_its_limit_is_a_card(self):
         reply = ("I found it.\n\n```curio.v1\n"
                  + _catalog_reply(("imported.peaks", "Storm peaks", 97, LONG_REASON)) + "\n```")
@@ -300,19 +348,25 @@ class TestALoaderIsBuiltOnlyFromADatasetTiedToIt:
     is: the dataflow's, one its goal names, one picked for it, its widget's or
     its code's."""
 
+    @pytest.mark.parametrize("entry", ["row-solve", "solve"])
     @pytest.mark.parametrize("finder_said", ["nothing", "under-the-floor"])
     def test_a_loader_whose_finder_left_no_card_is_not_built_from_a_dataset_nobody_picked(
-        self, client, user_and_token, tmp_curio, monkeypatch, finder_said
+        self, client, user_and_token, tmp_curio, monkeypatch, finder_said, entry
     ):
         user, token = user_and_token
         dataset_id = _a_dataset(user, "Storm peaks")
         reply = ("I could not find a source for this loader." if finder_said == "nothing"
                  else _catalog_reply((dataset_id, "Storm peaks", 25, "a neighbour of the data, not the data")))
         h = _Harness(client, user, token, monkeypatch, discover_replies=[reply], dl_replies=[_reads(dataset_id)])
-        done = h.validate("load")[-1][1]
+        if entry == "solve":
+            outcome = h.solve()["results"][h.load]
+            built = outcome.get("status") == "solved"
+        else:
+            outcome = h.validate("load")[-1][1]
+            built = outcome.get("verdict") == "pass"
         assert h.dl_calls, "the loader's rounds never ran"
         assert dataset_id not in h.dl_calls[0], "its Node Builder was handed a dataset nothing ties to the loader"
-        assert done.get("verdict") != "pass", done
+        assert not built, outcome
         assert h.node_content(h.load) == ""
         assert dataset_id not in _held_by_the_dataflow(h)
 
