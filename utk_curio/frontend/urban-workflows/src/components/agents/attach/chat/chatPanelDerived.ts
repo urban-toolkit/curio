@@ -30,6 +30,79 @@ export function shownInChat(turn: AgentSessionTurn): boolean {
   return turn.forAgents !== true;
 }
 
+/** Whether *text* is a candidates block, as the runtime recognizes one
+ * (`delegates._extract_candidates_reply`): a JSON object whose
+ * `datasetCandidates.lanes` is an object. */
+function isCandidatesBlock(text: string): boolean {
+  try {
+    const payload = JSON.parse(text) as { datasetCandidates?: { lanes?: unknown } } | null;
+    const lanes = payload && typeof payload === "object" ? payload.datasetCandidates?.lanes : undefined;
+    return Boolean(lanes && typeof lanes === "object" && !Array.isArray(lanes));
+  } catch {
+    return false;
+  }
+}
+
+/** A fenced block of any language tag, as the runtime reads one. */
+const FENCED = /```[A-Za-z0-9_.-]*[ \t]*\n([\s\S]*?)\n?```/g;
+
+/** The start of a candidates object, whose first key is `datasetCandidates`. */
+const OPENS_CANDIDATES = /^\{\s*"datasetCandidates"\s*:/;
+
+/** Whether *text* is a candidates object the reply's cut ended in: it opens
+ * one, and does not parse. The chat keeps a delegated reply's first 2,000
+ * characters (`delegates._run_delegate_traced`). */
+function isCutCandidatesBlock(text: string): boolean {
+  if (!OPENS_CANDIDATES.test(text)) return false;
+  try {
+    JSON.parse(text);
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+/** A reply's words as the chat draws them: the candidates a Dataset Finder
+ * printed, bare or in a fence, whole or cut where the chat cut the reply,
+ * are not drawn, since the card of those candidates shows them (board S08);
+ * the agents read the reply whole. Any other text is drawn as it is. */
+export function shownReplyText(text: string): string {
+  const whole = text.trim();
+  if (isCandidatesBlock(whole) || isCutCandidatesBlock(whole)) return "";
+  let removed = false;
+  let kept = text.replace(FENCED, (block: string, body: string) => {
+    if (!isCandidatesBlock(body.trim())) return block;
+    removed = true;
+    return "";
+  });
+  // A fence the cut left open, around the candidates: the reply's last
+  // fence, when it holds an odd number of them.
+  const at = kept.lastIndexOf("```");
+  if (at >= 0 && (kept.match(/```/g) ?? []).length % 2 === 1) {
+    const head = /^```[A-Za-z0-9_.-]*[ \t]*\n/.exec(kept.slice(at));
+    if (head && isCutCandidatesBlock(kept.slice(at + head[0].length).trim())) {
+      kept = kept.slice(0, at);
+      removed = true;
+    }
+  }
+  return removed ? kept.trim() : text;
+}
+
+/** Whether an agent turn draws nothing in the chat: its words were only the
+ * candidates its card shows (`shownReplyText`), it carries no part the chat
+ * draws (a card of its run's trace is drawn only with *runDetails*), and
+ * nothing stays under it. Such a turn takes no place in the chat. */
+export function drawsNothing(
+  turn: AgentSessionTurn,
+  shownText: string,
+  runDetails: boolean,
+  under: { failedCalls: number; meta: boolean; canvasUnchanged: boolean },
+): boolean {
+  if (turn.error || !turn.text.trim() || shownText) return false;
+  if (under.failedCalls > 0 || under.meta || under.canvasUnchanged || runDetails) return false;
+  return (turn.content ?? []).every((part) => part.type === "card" && (part as { runDetails?: boolean }).runDetails === true);
+}
+
 /** The one quiet line a task another agent asked of this one reads as:
  * "Asked by the Dataflow Builder: find a source for CPL branches." Null for
  * any other turn. */

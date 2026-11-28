@@ -100,6 +100,10 @@ export interface AgentDatasetCandidatesPart {
    * directly first, as the server ranked them; each lane's rows come ranked
    * too. Absent on a card minted before cards were ranked. */
   laneOrder?: ("external" | "catalog")[];
+  /** The card's rows as one list, best first across both lanes, by the same
+   * rule: each row's lane and its index in that lane. Absent on a card minted
+   * before cards were one list. */
+  rowOrder?: Array<["external" | "catalog", number]>;
   /** The card's own id: a node's Finder record names the card it offers now
    * and the one the pick was made on, and a pick names its card. Absent on a
    * card minted before cards had ids. */
@@ -119,6 +123,8 @@ export interface AgentSourcePickPart {
   lanes: AgentDatasetCandidatesPart["lanes"];
   /** The lanes best first, as the Finder's own card draws them. */
   laneOrder?: AgentDatasetCandidatesPart["laneOrder"];
+  /** Its rows as one list, best first, as the Finder's own card draws them. */
+  rowOrder?: AgentDatasetCandidatesPart["rowOrder"];
   /** The id of the Finder's card this one is the same as. */
   discoveryId?: string;
 }

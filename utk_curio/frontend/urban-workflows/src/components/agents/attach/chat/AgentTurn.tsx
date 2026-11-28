@@ -3,7 +3,6 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faRobot } from "@fortawesome/free-solid-svg-icons";
 
 import {
-  askersOf,
   DATASET_SELECT_CAPABILITY,
   declaresCapability,
   installsIntoAccount,
@@ -35,7 +34,15 @@ import { LlmConfigAction } from "../../../llmConfigs/LlmConfigAction";
 import styles from "../AgentChatPanel.module.css";
 import type { NodeChat } from "../../content/reviewCard/PlanNodesList";
 import type { RowSources } from "../../content/reviewCard/PlanNodeRow";
-import { failedCallWords, lastingToolFailures, planNodeStateFor, toolsCalledBy, type PlanLive } from "./chatPanelDerived";
+import {
+  drawsNothing,
+  failedCallWords,
+  lastingToolFailures,
+  planNodeStateFor,
+  shownReplyText,
+  toolsCalledBy,
+  type PlanLive,
+} from "./chatPanelDerived";
 
 /** The callbacks a turn's cards may need: an install's review, a change's
  * Undo, a landed plan's rows. */
@@ -143,10 +150,14 @@ export const AgentTurn: React.FC<{
   // the dataflow.
   const ownNode = attachment.target.targetId ?? null;
   const ownRecord = isFinderOnNode ? attachment.sourceRecord ?? null : null;
-  const askerNames = askersOf(ownRecord)
-    .filter((asker) => asker !== attachment.attachmentId)
-    .map((asker) => actions.agentNameOf?.(asker) ?? null)
-    .filter((name): name is string => Boolean(name));
+  // The reply's words, but for the candidates it printed, which their card
+  // shows.
+  const shownText = t.error ? t.text : shownReplyText(t.text);
+  // A reply that was only those candidates, with nothing else to draw,
+  // takes no place in the chat (board S08).
+  if (drawsNothing(t, shownText, runDetails, { failedCalls: failedCalls.length, meta: Boolean(shownMeta), canvasUnchanged })) {
+    return null;
+  }
   return (
     <div className={styles.agentRow}>
       <span className={`${styles.agentRowAvatar} ${tint}`} aria-hidden="true">
@@ -154,7 +165,7 @@ export const AgentTurn: React.FC<{
       </span>
       <div className={styles.agentCol}>
         <div className={`${styles.msgAgent} ${t.error ? styles.msgError : ""}`}>
-          {t.error ? t.text : <SafeAgentContent text={t.text} onInternalLink={actions.onInternalLink} />}
+          {t.error ? t.text : shownText ? <SafeAgentContent text={shownText} onInternalLink={actions.onInternalLink} /> : null}
           {t.error ? <LlmConfigAction remedy={t.remedy} /> : null}
           {(t.content ?? [])
             .filter((p): p is AgentCardPart => p.type === "card" && (runDetails || (p as AgentCardPart).runDetails !== true))
@@ -196,9 +207,8 @@ export const AgentTurn: React.FC<{
                 // steps: the same catalog import as the drawer footer.
                 onImportDataset={actions.onImportDataset && isFinderOnNode ? actions.onImportDataset : undefined}
                 // The Finder's card is named for its node and follows its
-                // record: Recorded where the pick was made, closed once newer
-                // candidates replaced it, and, while it is the card on offer,
-                // it names the chats that asked, which hold the same card.
+                // record: Recorded where the pick was made, and closed once
+                // newer candidates replaced it.
                 {...(isFinderOnNode
                   ? {
                       nodeLabel: actions.targetName ?? null,
@@ -209,8 +219,6 @@ export const AgentTurn: React.FC<{
                       onShowNewest: actions.showCardOf
                         ? () => actions.showCardOf!(ownRecord?.discoveryId ?? null, null)
                         : null,
-                      mirroredIn:
-                        !part.discoveryId || ownRecord?.discoveryId === part.discoveryId ? askerNames : [],
                     }
                   : {})}
               />
@@ -228,7 +236,7 @@ export const AgentTurn: React.FC<{
               return (
                 <AgentDatasetCandidatesCard
                   key={`pick-${part.nodeId}-${j}`}
-                  part={{ type: "datasetCandidates", lanes: part.lanes, laneOrder: part.laneOrder }}
+                  part={{ type: "datasetCandidates", lanes: part.lanes, laneOrder: part.laneOrder, rowOrder: part.rowOrder }}
                   tintClassName={tint}
                   nodeLabel={part.nodeLabel}
                   nodeId={part.nodeId}
