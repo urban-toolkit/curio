@@ -15,6 +15,8 @@ On dev 0.17.441 (11-28, ci-reports/finder-candidates-dev-1128/SUMMARY.md):
 - A sentence that started with a dataset's name capitalized it.
 - A Hub row linking its ``/about`` page read Verified, though the page is no
   data: the check probed the item's metadata in its place.
+- Once one loader's pick added a dataset to the dataflow, another loader's
+  card still said Not installed for it.
 
 Names main lacks are read inside each test, so the module imports on main and
 each test fails at its own check.
@@ -429,6 +431,62 @@ class TestASentenceKeepsANamesCase:
                 *[h.session_turns(chat)[-1].get("text") or "" for chat in (h.finder_attachment_id(), h.att)]]
         for text in said:
             assert LOWER_NAME in text and LOWER_NAME[0].upper() + LOWER_NAME[1:] not in text, text
+
+
+# ── 8. A card says what the dataflow holds now ───────────────────────────────
+
+
+def _catalog_rows_of(h, attachment_id: str, *, node_id: str) -> list[dict]:
+    """The Data Catalog rows the cards of the chat of *attachment_id* offer
+    for the loader *node_id*: its Dataset Finder's own cards, and the copies
+    in a chat that asked (``sourcePick``)."""
+    return [
+        row for turn in h.session_turns(attachment_id) for part in turn.get("content") or []
+        if part.get("type") == "datasetCandidates"
+        or (part.get("type") == "sourcePick" and part.get("nodeId") == node_id)
+        for row in (part.get("lanes") or {}).get("catalog") or []
+    ]
+
+
+class TestACardSaysWhatTheDataflowHoldsNow:
+    """On dev, in dataflow B, the 10-year loader's pick added the shipped
+    peak depths to the dataflow, and the 50-year loader's card still said
+    Not installed for the same dataset: a row's ``installed`` was kept as the
+    Data Catalog listing said it when the card was minted, never read again.
+    Every card that offers a dataset says it is installed once the dataflow
+    holds it, however it got there."""
+
+    def test_the_other_loaders_card_says_installed_once_a_pick_added_the_dataset(
+        self, client, user_and_token, tmp_curio, monkeypatch
+    ):
+        user, token = user_and_token
+        dataset_id = _a_dataset(user, "Peak depths")
+        plan = {
+            "goal": "chart the peak depths of two storms",
+            "nodes": [
+                {"ref": "load_10", "nodeType": "curio.builtin/data-loading", "title": "10-year storm",
+                 "intent": "load the 10-year storm's peaks"},
+                {"ref": "load_50", "nodeType": "curio.builtin/data-loading", "title": "50-year storm",
+                 "intent": "load the 50-year storm's peaks"},
+                {"ref": "both", "nodeType": "curio.builtin/python-computation", "title": "Both storms",
+                 "intent": "stack the two storms' peaks"},
+            ],
+            "edges": [{"from": "load_10", "to": "both"}, {"from": "load_50", "to": "both"}],
+        }
+        h = _Harness(client, user, token, monkeypatch, plan=plan,
+                     discover_replies=[_catalog_reply((dataset_id, "Peak depths", 97, "the storms' peaks"))],
+                     dl_replies=[_reads(dataset_id)])
+        done = h.simulate("auto")[-1][1]
+        assert (done.get("status"), (done.get("reason") or {}).get("kind")) == ("paused", "awaiting-source"), done
+        first, second = h.loaders
+        assert [row["installed"] for row in _catalog_rows_of(h, h.finder_attachment_id(second), node_id=second)] \
+            == [False], "the premise: the dataflow does not hold it yet"
+        picked = _select(h, h.finder_attachment_id(first), [{"lane": "catalog", "key": dataset_id}])
+        assert picked.status_code == 200, picked.get_data(as_text=True)
+        assert dataset_id in _held_by_the_dataflow(h)
+        for chat in (h.finder_attachment_id(second), h.att):
+            rows = [row for row in _catalog_rows_of(h, chat, node_id=second) if row.get("datasetId") == dataset_id]
+            assert rows and all(row.get("installed") is True for row in rows), (chat, rows)
 
 
 # ── 7. A link to a page reads Web page, whatever its portal's metadata says ──
