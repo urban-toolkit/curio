@@ -19,8 +19,11 @@ says what is asked and what her Apply does (:data:`KINDS`):
   (:data:`REQUESTS_FILE`), which the doc does not carry and no tab writes. It
   writes nothing in the owner's store and nothing in the dataflow.
 * :func:`apply`, the owner's alone, does what the kind's Apply does, as her
-  change. A request whose asker no longer edits the dataflow goes, with the
-  reason. One the kind cannot apply stays in her review, with the reason.
+  change, then tells what registered for it (:func:`when_applied`): the
+  agents end the wait of a node whose source is the item (an editor's pick on
+  a Dataset Finder's card). A request whose asker no longer edits the
+  dataflow goes, with the reason. One the kind cannot apply stays in her
+  review, with the reason.
 * :func:`dismiss`, the owner's alone, drops the request and leaves nothing
   behind.
 
@@ -214,16 +217,9 @@ class Asked:
     reason: str | None = None
 
 
-def ask(user, project_id: str, kind_name: str, item: object, *, node_id: object = None,
-        add: bool = False) -> dict[str, Any]:
-    """An editor's request that the owner add *item*, of the kind *kind_name*,
-    to her dataflow: dropped on the node *node_id*, or onto the canvas, which
-    made that node, or added with Add to project (*add*). The answer says when
-    nothing was asked. One request stands for an item an editor asked for and
-    the owner has not reviewed: asking again names the new node too.
-
-    Writes the request beside the dataflow's spec and nothing else: not the
-    owner's store, not the dataflow."""
+def _checked(user, project_id: str, kind_name: str, item: object, *, add: bool, owners_own: bool):
+    """The kind, the dataflow and what the kind says an ask of *item* is for
+    (:func:`ask`), or the refusal the ask would answer."""
     kind = kind_of(kind_name)
     flow = Dataflow(user, project_id, kind.ITEMS)
     if flow.owner:
@@ -231,7 +227,38 @@ def ask(user, project_id: str, kind_name: str, item: object, *, node_id: object 
     item_id = str(item or "").strip()
     if not item_id:
         raise RequestError(f"{kind.ITEM} is required", 400)
-    asked = kind.asked(flow, item_id, add=add)
+    if not owners_own:
+        return kind, flow, kind.asked(flow, item_id, add=add)
+    if not getattr(kind, "ASKS_FOR_THE_OWNERS_OWN", False):
+        raise RequestError(f"no request asks the owner for {kind.ITEMS} of her own", 400)
+    return kind, flow, kind.asked(flow, item_id, add=add, owners_own=True)
+
+
+def check(user, project_id: str, kind_name: str, item: object, *, add: bool = False,
+          owners_own: bool = False) -> None:
+    """Refuse an ask :func:`ask` would refuse, asking nothing. A caller that
+    asks for several items checks each first, so a refusal of one leaves no
+    request of the others in the owner's review."""
+    _checked(user, project_id, kind_name, item, add=add, owners_own=owners_own)
+
+
+def ask(user, project_id: str, kind_name: str, item: object, *, node_id: object = None,
+        add: bool = False, owners_own: bool = False) -> dict[str, Any]:
+    """An editor's request that the owner add *item*, of the kind *kind_name*,
+    to her dataflow: dropped on the node *node_id*, or onto the canvas, which
+    made that node, or added with Add to project (*add*). The answer says when
+    nothing was asked. One request stands for an item an editor asked for and
+    the owner has not reviewed: asking again names the new node too.
+
+    *owners_own* lets the kind name an item of the owner's own store, for a
+    kind that has such requests (``ASKS_FOR_THE_OWNERS_OWN``): an editor's
+    pick on a Dataset Finder's card of a dataset of hers, which the card
+    offered (``agents/application/dataset_selection.py``). The routes never
+    pass it, so no ask by an id names what her store holds.
+
+    Writes the request beside the dataflow's spec and nothing else: not the
+    owner's store, not the dataflow."""
+    kind, flow, asked = _checked(user, project_id, kind_name, item, add=add, owners_own=owners_own)
     if asked.reason:
         return {"requested": False, "reason": asked.reason}
     node = str(node_id).strip() if isinstance(node_id, str) and node_id.strip() else None
@@ -343,8 +370,35 @@ def apply(user, project_id: str, kind_name: str, request_id: str) -> dict[str, A
         if reason is None:
             raise
         raise RequestError(f"{name} could not be added: {reason}", 409) from exc
+    _tell_what_was_applied(flow)
     _tell_the_room(flow.project_id, kind_name)
     return {"proposalId": request_id, "status": "applied", **outcome}
+
+
+#: What is told of an Apply that landed: each called with the dataflow's
+#: owner key and its id, after the kind's Apply. The agents register theirs
+#: (``agents/application/dataset_selection.py``): a node whose source waited
+#: for what the Apply added stops waiting.
+_applied_hooks: list = []
+
+
+def when_applied(hook) -> None:
+    """Call *hook* with ``(owner_key, project_id)`` each time the owner's
+    Apply of a request lands (:func:`apply`), once however often it is
+    registered."""
+    if hook not in _applied_hooks:
+        _applied_hooks.append(hook)
+
+
+def _tell_what_was_applied(flow: Dataflow) -> None:
+    """Tell :func:`when_applied`'s hooks that an Apply landed on *flow*. A
+    hook that fails never fails the Apply, which stands: the next Solve or
+    Resume ends the wait it would have ended."""
+    for hook in list(_applied_hooks):
+        try:
+            hook(flow.owner_key, flow.project_id)
+        except Exception:  # noqa: BLE001 - the Apply stands whether or not it was told
+            logger.exception("what the owner added to dataflow %s could not be told", flow.project_id)
 
 
 def _put_back(flow: Dataflow, request: dict[str, Any]) -> None:

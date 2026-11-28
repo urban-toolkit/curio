@@ -904,7 +904,7 @@ class AttachmentTurn:
         )
         enriched = agents_delegates._enriched_delegate_inputs(
             self.user_key, self.project_id, loop_ctx, req["capability"], inputs,
-            catalog_rows=catalog_rows,
+            catalog_rows=catalog_rows, delegate=getattr(resolution, "manifest", None),
         )
         status, text, child, home_att = agents_delegates._run_delegate_traced(
             self.user_key,

@@ -1618,6 +1618,13 @@ def _rows_per_lane(_src: _Sources) -> str:
     return str(_CANDIDATES_MAX_ROWS_PER_LANE)
 
 
+def _candidate_min_fit(_src: _Sources) -> str:
+    """The fit a candidates row needs to be offered."""
+    from utk_curio.backend.app.agents.domain.content import CANDIDATE_MIN_FIT
+
+    return str(CANDIDATE_MIN_FIT)
+
+
 def _runtime_block_keys(_src: _Sources) -> str:
     """The keys of a node row's ``runtime`` block, as ``{a, b, ...}``."""
     from utk_curio.backend.app.agents.domain.node_context import RUNTIME_BLOCK_KEYS
@@ -1909,6 +1916,7 @@ PROMPT_FIELDS: dict[str, PromptField] = {
     "note.palette": PromptField(_note_palette),
     "egress.calls_per_run": PromptField(_web_calls_per_run),
     "candidates.rows_per_lane": PromptField(_rows_per_lane),
+    "candidates.min_fit": PromptField(_candidate_min_fit),
     "node_context.runtime_keys": PromptField(_runtime_block_keys),
     "input_contract.several": PromptField(_input_kind_several),
     "input_contract.gathered": PromptField(_input_kind_gathered),

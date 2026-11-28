@@ -11,10 +11,15 @@ columns) on top of the generic verdict. Adding a provider (CKAN, ArcGIS,
 Data.gov, …) is one registry entry, never a new gate.
 
 Outcomes are honest data:
-- ``verified`` — the endpoint answered 2xx; evidence carries what was seen;
-- ``unreachable`` — it answered an error status or the transport failed;
-- ``refused`` — the egress policy refused the URL (SSRF shapes, schemes);
-- ``unverified`` — nothing probeable (no URL): stated loudly, never implied.
+- ``verified``: the endpoint answered 2xx; evidence carries what was seen, and
+  ``webPage`` says the answer was a web page, which answered but is no data;
+- ``http-error``: it answered with an error status, which ``httpStatus`` names;
+- ``unreachable``: no answer came, the transport failed;
+- ``refused``: the egress policy refused the URL (SSRF shapes, schemes);
+- ``unverified``: nothing probeable (no URL), stated loudly, never implied.
+
+The probe says who it is and what it takes (:data:`PROBE_HEADERS`), as a
+portal's usage policy asks of a client and as Curio's own Overpass client does.
 """
 
 from __future__ import annotations
@@ -29,6 +34,20 @@ from utk_curio.backend.app.agents.infrastructure import egress
 
 _SAMPLE_KEYS_MAX = 12
 _DETAIL_MAX = 200
+
+VERIFIED = "verified"
+HTTP_ERROR = "http-error"
+UNREACHABLE = "unreachable"
+#: The outcomes of a link that gave nothing a node can load: an error answer,
+#: or none at all. A pick of such a link resolves nothing.
+FAILED_STATUSES = (HTTP_ERROR, UNREACHABLE)
+
+#: What the probe sends with every request: who it is and what it accepts.
+#: A keyed probe's own headers are sent beside them.
+PROBE_HEADERS = {
+    "User-Agent": egress.USER_AGENT,
+    "Accept": "application/json, application/geo+json, text/csv, */*;q=0.8",
+}
 
 
 def _now() -> str:
@@ -86,23 +105,27 @@ def verify_endpoint(url: str, *, request_fn=None, resolver=None, budget=None,
                     headers=None, params=None) -> dict:
     """The GENERIC probe — the universal gate for any dataset API URL.
     ``headers``/``params`` (dev/116): a keyed probe sends a saved connection
-    key the way the API expects it; the caller redacts the outcome."""
+    key the way the API expects it; the caller redacts the outcome. Every
+    probe sends :data:`PROBE_HEADERS` too."""
     try:
         result = egress.fetch(url, request_fn=request_fn, resolver=resolver, budget=budget,
-                              headers=headers, params=params)
+                              headers={**PROBE_HEADERS, **(headers or {})}, params=params)
     except egress.EgressRefused as exc:
         return {"status": "refused", "detail": str(exc)[:_DETAIL_MAX], "checkedAt": _now()}
     except Exception as exc:  # transport: unreachable, never a policy claim
         return {
-            "status": "unreachable",
+            "status": UNREACHABLE,
             "detail": str(exc)[:_DETAIL_MAX],
             "checkedAt": _now(),
         }
     if 200 <= result.status < 300:
         return {
-            "status": "verified",
+            "status": VERIFIED,
             "httpStatus": result.status,
             "contentType": result.content_type[:100],
+            # A page answered, but it is about the data, never the data: no
+            # card reads it as verified data.
+            **({"webPage": True} if _content_type_kind(result.content_type) == "page" else {}),
             **_sample_shape(result.body, result.content_type),
             **_body_evidence(result.body, result.content_type),
             **_redirect_evidence(result.url, result),
@@ -113,7 +136,7 @@ def verify_endpoint(url: str, *, request_fn=None, resolver=None, budget=None,
             "_body": result.body,
         }
     return {
-        "status": "unreachable",
+        "status": HTTP_ERROR,
         "httpStatus": result.status,
         "contentType": result.content_type[:100],
         "detail": f"the endpoint answered {result.status}",
@@ -358,7 +381,9 @@ def classify_access(observation: dict | None, url: str | None = None) -> dict:
                 f"{obs.get('contentType') or 'no content type'}, which is not recognized as data"
             )[:_ACCESS_WHY_MAX],
         }
-    if status == "unreachable" and http_status in _GATED_STATUSES:
+    # An observation recorded before error answers had their own status says
+    # ``unreachable`` with the status it answered.
+    if status in FAILED_STATUSES and http_status in _GATED_STATUSES:
         why = f"the data URL answered {http_status}: the portal gates it"
         if title:
             why += f' ("{title}")'

@@ -437,7 +437,7 @@ def mark_skipped(spec: dict, attachment_id: str, *, literal: str) -> dict | None
 
 
 def resolve_picks(
-    part: dict | None, picks: object, *, catalog_rows: list[dict] | None = None
+    part: dict | None, picks: object, *, catalog_rows: list[dict] | None = None, owners_listing=None,
 ) -> list[dict]:
     """Resolve client-supplied ``{lane, key}`` picks against the runtime's OWN
     candidate rows (the persisted ``datasetCandidates`` part).
@@ -452,6 +452,12 @@ def resolve_picks(
     of the card is read from it again, as an external row is probed again at
     confirmation: one the listing no longer holds is refused, and whether it
     is installed is the listing's answer, not the card's.
+
+    *owners_listing*, for an editor the owner invited, returns the dataflow
+    owner's listing, read once and only for a catalog row of the card that
+    his own listing does not hold: a dataset of hers that a card of a run of
+    hers offered, which his pick asks her to add. A row no listing holds is
+    refused; a key no card offered is read from his listing alone.
     """
     if not isinstance(part, dict) or not isinstance(part.get("lanes"), dict):
         if not catalog_rows:
@@ -466,6 +472,16 @@ def resolve_picks(
     lanes = part["lanes"]
     resolved: list[dict] = []
     seen: set[tuple[str, str]] = set()
+    owners: list[list[dict]] = []  # the owner's listing, once read
+
+    def _listed(key: str) -> dict | None:
+        listed = _listing_item(catalog_rows, key)
+        if listed is None and owners_listing is not None:
+            if not owners:
+                owners.append(owners_listing() or [])
+            listed = _listing_item(owners[0], key)
+        return listed
+
     for pick in picks:
         if not isinstance(pick, dict):
             raise DatasetResolutionError("each pick must be an object")
@@ -481,11 +497,7 @@ def resolve_picks(
             None,
         )
         if row is not None and lane == "catalog" and catalog_rows is not None:
-            listed = next(
-                (item for item in catalog_rows
-                 if isinstance(item, dict) and str(item.get("id") or "") == key.strip()),
-                None,
-            )
+            listed = _listed(key.strip())
             if listed is None:
                 raise DatasetResolutionError(
                     f"{key!r} is not in the Data Catalog: select a dataset it holds"
@@ -508,6 +520,14 @@ def resolve_picks(
         seen.add((lane, key))
         resolved.append({"lane": lane, **row})
     return resolved
+
+
+def _listing_item(rows: list[dict] | None, dataset_id: str) -> dict | None:
+    """The item of the Data Catalog listing *rows* whose id is *dataset_id*."""
+    return next(
+        (item for item in rows or [] if isinstance(item, dict) and str(item.get("id") or "") == dataset_id),
+        None,
+    )
 
 
 def row_key(lane: str, row: dict) -> str:
@@ -645,7 +665,7 @@ def record_selection(spec: dict, attachment_id: str, rows: list[dict], *,
     needs_install = [r for r in rows if _needs_install(r)]
     unreachable = [
         r for r in rows
-        if r["lane"] == "external" and (r.get("verification") or {}).get("status") == "unreachable"
+        if r["lane"] == "external" and (r.get("verification") or {}).get("status") in verify.FAILED_STATUSES
     ]
     if unreachable and len(unreachable) == len(rows):
         status = STATE_CANDIDATES_PENDING  # nothing usable was confirmed
@@ -700,6 +720,42 @@ def mark_dataset_installed(spec: dict, dataset_id: str) -> list[str]:
     return changed
 
 
+def held_datasets(spec: dict | None) -> set[str]:
+    """The ids of the datasets the dataflow of *spec* holds: the refs Add to
+    project, an applied install and an owner's Apply of an editor's request
+    write."""
+    refs = ((spec or {}).get("dataflow") or {}).get("datasets") or []
+    return {
+        str(ref.get("datasetId") or ref.get("id"))
+        for ref in refs if isinstance(ref, dict) and (ref.get("datasetId") or ref.get("id"))
+    }
+
+
+def installs_awaited(spec: dict | None) -> set[str]:
+    """The ids of the datasets a pick waits for the install of, in *spec*."""
+    awaited: set[str] = set()
+    for record in attachments.list_attachments(spec or {}):
+        state = record.get(RECORD_KEY)
+        if not isinstance(state, dict) or state.get("status") != STATE_AWAITING_INSTALL:
+            continue
+        awaited |= {
+            str(pick["datasetId"]) for pick in state.get("picks") or []
+            if isinstance(pick, dict) and pick.get("datasetId") and _needs_install(pick)
+        }
+    return awaited
+
+
+def settle_installs(spec: dict) -> list[str]:
+    """Resolve every pick that waits for the install of a dataset the
+    dataflow of *spec* holds now, however it got there: Add to project from
+    the Data Catalog, the owner's Apply of an editor's request, or an applied
+    ``dataset.install``. Returns the attachment ids whose record resolved."""
+    changed: list[str] = []
+    for dataset_id in sorted(installs_awaited(spec) & held_datasets(spec)):
+        changed += mark_dataset_installed(spec, dataset_id)
+    return changed
+
+
 def confirmed_source(spec: dict | None, node_id: str, *, user_key: str | None = None) -> dict | None:
     """The confirmed source a content delegate is HANDED for this node, or
     None. Shape mirrors the candidate rows the user actually confirmed."""
@@ -742,6 +798,7 @@ def initiate(
     mission: str | None = None,
     catalog_rows: list | None = None,
     asker=None,
+    lookups=None,
 ) -> dict:
     """Run ONE ``dataset.discover`` delegation for *node* and leave its
     candidates awaiting the user in that node's own Dataset Finder chat, and
@@ -751,7 +808,9 @@ def initiate(
     *asker* is the person the run is for, which a Solve's thread names (its
     ``acting_user``) where no request does: the delegated run holds the
     skills of the dataflow's packages as that person's runs do
-    (``delegation.run_delegate``).
+    (``delegation.run_delegate``), and the portals are searched for it as that
+    person, holding *lookups*, the Solve batch's lock on its reads of the
+    account's store, when it gives one.
 
     Server-initiated: the model does not choose this, which is why the Dataset
     Finder is a declared hard dependency of both composites (``DEC-068``'s
@@ -765,12 +824,9 @@ def initiate(
     "attachmentId", "candidates", "detail"}``. Never raises into the caller's
     action: an unavailable specialist is reported, not thrown.
     """
-    from utk_curio.backend.app.collaboration import dataflow_docs
-    from utk_curio.backend.app.packages import service as packages_services
     from utk_curio.backend.app.projects import storage as projects_storage
 
     node_id = str(node.get("id") or "")
-    node_type = node.get("type")
     if not node_id:
         return {"status": "unavailable", "attachmentId": None,
                 "detail": "the node has no id"}
@@ -789,34 +845,15 @@ def initiate(
                 "detail": (f"the {name} could not be resolved ({outcome})" if name
                            else f"no installed agent declares {DISCOVER} ({outcome})")}
     finder_name = getattr(resolution.manifest, "name", None) or resolution.coord
-    # Read before the spec lock, which the package store's own lock must not nest in.
-    templates = packages_services.roster_templates(user_key, project_id)
-    # The attachment is a read-modify-write of the spec, and a Solve batch
-    # runs its nodes in a worker pool: under the project's own spec lock, so
-    # two data-loading nodes resolving at once cannot lose each other's
-    # attachment (dev/124's chokepoint, dev/118's pool).
-    actor = dataflow_docs.by_agent(resolution.coord, user_key, "dataset")
-    with projects_storage.spec_write_lock(user_key, project_id):
-        spec = dataflow_docs.live(user_key, project_id)
-        if spec is None:
-            return {"status": "unavailable", "attachmentId": None,
-                    "detail": "the project spec is unavailable"}
-        attached = plans._attach_node_agent(
-            user_key, spec, resolution.coord.split("@", 1)[0], node_id, node_type,
-            templates=templates,
-        )
-        attachment_id = attached.get("attachmentId")
-        if not attachment_id:
-            return {"status": "unavailable", "attachmentId": None,
-                    "detail": f"no {finder_name} on this node: {attached.get('reason')}"}
-        if attached.get("status") == "attached":
-            # Persist BEFORE the delegate runs: the dev/72 home lookup reads
-            # the saved spec, and the trace turns belong in this session.
-            dataflow_docs.write(user_key, project_id, spec, actor)
+    attached = _attach_the_finder(user_key, project_id, node, resolution, finder_name)
+    if attached["status"] != "ok":
+        return attached
+    attachment_id, spec = attached["attachmentId"], attached["spec"]
     loop_ctx: dict = {
         "attachment_id": parent_attachment_id,
         "manifest": parent_manifest,
         "target": {"kind": "node", "targetId": node_id},
+        "asker": asker, "lookups": lookups,  # whom the portals are searched as, and the batch's lock
     }
     inputs = {
         "mission": (mission or str(node.get("goal") or "") or "").strip()[:2000],
@@ -836,7 +873,7 @@ def initiate(
     if composed is not None:
         inputs["nodeContext"] = composed
     inputs = delegates._enriched_delegate_inputs(
-        user_key, project_id, loop_ctx, DISCOVER, inputs, catalog_rows=catalog_rows,
+        user_key, project_id, loop_ctx, DISCOVER, inputs, catalog_rows=catalog_rows, delegate=resolution.manifest,
     )
     status, text, _child, _home = delegates._run_delegate_traced(
         user_key, project_id, resolution.coord, DISCOVER, inputs, config,
@@ -857,6 +894,57 @@ def initiate(
     if part is None:
         return {"status": "no-candidates", "attachmentId": attachment_id,
                 "detail": model_text[:300]}
+    total = _offer_the_card(user_key, project_id, node, part, attachment_id, parent_attachment_id,
+                            coord=resolution.coord, finder_name=finder_name)
+    return {"status": "awaiting", "attachmentId": attachment_id,
+            "candidates": total,
+            "detail": f"{_counted(total)} awaiting your selection"}
+
+
+def _attach_the_finder(user_key: str, project_id: str, node: dict, resolution, finder_name: str) -> dict:
+    """The node's own attachment of the Finder *resolution* names, made when
+    the node has none: ``{"status": "ok", "attachmentId", "spec"}``, or
+    :func:`initiate`'s ``unavailable`` answer.
+
+    The attachment is a read-modify-write of the spec, and a Solve batch runs
+    its nodes in a worker pool: under the project's own spec lock, so two
+    data-loading nodes resolving at once cannot lose each other's attachment
+    (dev/124's chokepoint, dev/118's pool)."""
+    from utk_curio.backend.app.collaboration import dataflow_docs
+    from utk_curio.backend.app.packages import service as packages_services
+    from utk_curio.backend.app.projects import storage as projects_storage
+
+    # Read before the spec lock, which the package store's own lock must not nest in.
+    templates = packages_services.roster_templates(user_key, project_id)
+    with projects_storage.spec_write_lock(user_key, project_id):
+        spec = dataflow_docs.live(user_key, project_id)
+        if spec is None:
+            return {"status": "unavailable", "attachmentId": None,
+                    "detail": "the project spec is unavailable"}
+        attached = plans._attach_node_agent(
+            user_key, spec, resolution.coord.split("@", 1)[0], str(node.get("id") or ""), node.get("type"),
+            templates=templates,
+        )
+        attachment_id = attached.get("attachmentId")
+        if not attachment_id:
+            return {"status": "unavailable", "attachmentId": None,
+                    "detail": f"no {finder_name} on this node: {attached.get('reason')}"}
+        if attached.get("status") == "attached":
+            # Persist BEFORE the delegate runs: the dev/72 home lookup reads
+            # the saved spec, and the trace turns belong in this session.
+            dataflow_docs.write(user_key, project_id, spec, dataflow_docs.by_agent(resolution.coord, user_key, "dataset"))
+    return {"status": "ok", "attachmentId": attachment_id, "spec": spec}
+
+
+def _offer_the_card(user_key: str, project_id: str, node: dict, part: dict, attachment_id: str,
+                    parent_attachment_id: str | None, *, coord: str, finder_name: str) -> int:
+    """Offer the candidates card *part*, under an id of its own, in the
+    Finder's chat and in the chat of *parent_attachment_id*, which asked for
+    it, and leave the Finder's record waiting for its pick. Returns how many
+    rows it holds."""
+    from utk_curio.backend.app.collaboration import dataflow_docs
+    from utk_curio.backend.app.projects import storage as projects_storage
+
     total = sum(len(rows) for rows in (part.get("lanes") or {}).values())
     # The card's own id, the same in the Finder's chat and the chat that asked.
     part["discoveryId"] = new_discovery_id()
@@ -873,10 +961,8 @@ def initiate(
                 asked_by=parent_attachment_id if parent_attachment_id != attachment_id else None,
                 discovery_id=part["discoveryId"],
             )
-            dataflow_docs.write(user_key, project_id, fresh, actor)
-    return {"status": "awaiting", "attachmentId": attachment_id,
-            "candidates": total,
-            "detail": f"{_counted(total)} awaiting your selection"}
+            dataflow_docs.write(user_key, project_id, fresh, dataflow_docs.by_agent(coord, user_key, "dataset"))
+    return total
 
 
 def _append_candidates_turn(
@@ -951,6 +1037,8 @@ def _mirror_candidates_turn(
                     "nodeLabel": label,
                     **({"discoveryId": part["discoveryId"]} if part.get("discoveryId") else {}),
                     "lanes": part.get("lanes") or {},
+                    # Its lanes as the Finder's card draws them, best first.
+                    **({"laneOrder": part["laneOrder"]} if part.get("laneOrder") else {}),
                 }],
             )],
         )

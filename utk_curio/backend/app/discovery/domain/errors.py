@@ -13,6 +13,11 @@ class DiscoveryError(Exception):
     """Base for every Discovery Catalog failure. 400 unless a subclass says otherwise."""
 
     status = 400
+    #: Whether the source gave no answer this time, which asking again later
+    #: may get: Curio's rate limit refused the request, or the portal could
+    #: not be reached or answered 408, 429 or a 5xx. A portal that answered
+    #: anything else, a 404 among them, answered.
+    unanswered = False
 
 
 class SourceNotFound(DiscoveryError):
@@ -36,6 +41,7 @@ class CredentialRequired(DiscoveryError):
 
 class RateLimited(DiscoveryError):
     status = 429
+    unanswered = True
 
 
 class ProviderError(DiscoveryError):

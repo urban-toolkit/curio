@@ -53,7 +53,21 @@ ENV_FIXTURES = "CURIO_DISCOVERY_FIXTURES"
 
 
 class DiscoveryTransportError(ProviderError):
-    """The portal could not be reached, or did not answer usefully."""
+    """The portal could not be reached, or did not answer usefully.
+
+    *unanswered* when it gave no answer this time: it could not be reached,
+    or it answered 408, 429 or a 5xx (:func:`_unanswered`)."""
+
+    def __init__(self, message: str = "", *, unanswered: bool = False) -> None:
+        super().__init__(message)
+        self.unanswered = unanswered
+
+
+def _unanswered(status: int) -> bool:
+    """Whether a portal's answer of *status* is no answer this time, which
+    asking again later may get: a request it timed out (408), too many
+    requests (429), or a server error (5xx)."""
+    return status in (408, 429) or status >= 500
 
 
 class FixtureMissing(DiscoveryTransportError):
@@ -113,14 +127,15 @@ class HttpDiscoveryTransport:
         except Exception as exc:  # transport: unreachable, never a policy claim
             message = f"could not reach {_host(url)}: {exc}"
             if not key:
-                raise DiscoveryTransportError(message) from exc
-            failure = DiscoveryTransportError(_redact(message, key))
+                raise DiscoveryTransportError(message, unanswered=True) from exc
+            failure = DiscoveryTransportError(_redact(message, key), unanswered=True)
         if failure is not None:
             # Raised outside the handler, so it holds no original exception:
             # that one names the URL that carried the key.
             raise failure
         if not (200 <= result.status < 300):
-            raise DiscoveryTransportError(f"{_host(url)} answered {result.status}")
+            raise DiscoveryTransportError(f"{_host(url)} answered {result.status}",
+                                          unanswered=_unanswered(result.status))
         if result.truncated:
             raise DiscoveryTransportError(
                 f"{_host(url)} returned more than {MAX_METADATA_BYTES} bytes of metadata"
@@ -170,15 +185,16 @@ class HttpDiscoveryTransport:
                 raise
             message = f"could not download from {_host(url)}: {exc}"
             if not key:
-                raise DiscoveryTransportError(message) from exc
-            failure = DiscoveryTransportError(_redact(message, key))
+                raise DiscoveryTransportError(message, unanswered=True) from exc
+            failure = DiscoveryTransportError(_redact(message, key), unanswered=True)
         if failure is not None:
             raise failure  # outside the handler: see get_page
         if not (200 <= result.status < 300):
             # An error page is not the file, whatever the sink was handed: the
             # caller discards what it wrote, as the recorded transport has
             # always refused one.
-            raise DiscoveryTransportError(f"{_host(url)} answered {result.status}")
+            raise DiscoveryTransportError(f"{_host(url)} answered {result.status}",
+                                          unanswered=_unanswered(result.status))
         if key:
             # What a dataset records as where it came from, and the audit:
             # the URL as the provider built it.
@@ -228,7 +244,7 @@ class FixtureDiscoveryTransport:
         if error == "too-large":
             raise DownloadTooLarge(f"recorded as oversized: {url}")
         if error:
-            raise DiscoveryTransportError(f"recorded as {error}: {url}")
+            raise DiscoveryTransportError(f"recorded as {error}: {url}", unanswered=True)
         return entry
 
     def json_get(self, url, *, credential=None, headers=None):
@@ -238,7 +254,7 @@ class FixtureDiscoveryTransport:
         entry = self._entry(url)
         status = int(entry.get("status", 200))
         if not (200 <= status < 300):
-            raise DiscoveryTransportError(f"{_host(url)} answered {status}")
+            raise DiscoveryTransportError(f"{_host(url)} answered {status}", unanswered=_unanswered(status))
         body = (self.root / entry["file"]).read_text(encoding="utf-8")
         return body, dict(entry.get("headers") or {})
 
@@ -252,7 +268,7 @@ class FixtureDiscoveryTransport:
         entry = self._entry(f"{url} {byte_range}" if byte_range else url)
         status = int(entry.get("status", 200))
         if not (200 <= status < 300):
-            raise DiscoveryTransportError(f"{_host(url)} answered {status}")
+            raise DiscoveryTransportError(f"{_host(url)} answered {status}", unanswered=_unanswered(status))
         recorded = dict(entry.get("headers") or {})
         # The headers are seen before the body, as the real transport sees them.
         if before_body is not None:

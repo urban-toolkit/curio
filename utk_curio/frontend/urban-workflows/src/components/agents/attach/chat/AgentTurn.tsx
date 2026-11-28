@@ -228,7 +228,7 @@ export const AgentTurn: React.FC<{
               return (
                 <AgentDatasetCandidatesCard
                   key={`pick-${part.nodeId}-${j}`}
-                  part={{ type: "datasetCandidates", lanes: part.lanes }}
+                  part={{ type: "datasetCandidates", lanes: part.lanes, laneOrder: part.laneOrder }}
                   tintClassName={tint}
                   nodeLabel={part.nodeLabel}
                   nodeId={part.nodeId}

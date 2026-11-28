@@ -210,6 +210,16 @@ def _acting_user():
     return agents_askers.person()
 
 
+def _dataflow_owner(project_id: str):
+    """The account that owns the dataflow *project_id*, as its row names it,
+    or None: a hosted guest's own copy, which has no row, is its own."""
+    from utk_curio.backend.app.projects.models import Project
+    from utk_curio.backend.extensions import db
+
+    project = db.session.get(Project, project_id)
+    return project.owner if project is not None else None
+
+
 def _acting_token():
     """The request's sign-in token, or None, captured at a run's entry like
     :func:`_acting_user`. The sandbox tags every artifact the run makes with

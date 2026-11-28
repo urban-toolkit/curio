@@ -1332,6 +1332,22 @@ The project's Data Catalog as catalog.search returned it
 
 The Data Catalog listing was empty or unavailable: the catalog lane must stay empty; say so.
 
+## dataset.discovery-searched
+
+The Discovery Catalog's portals as discovery.search returned them for this need
+
+## dataset.discovery-unavailable
+
+The Discovery Catalog's portals could not be searched for this need: say so, and name no portal dataset you cannot ground.
+
+## dataset.candidates-none-usable-under-the-fit-floor
+
+(dropped {dropped} row{s} rated under a fit of {min_fit}: none of them holds the data the node loads)
+
+## dataset.candidates-shown-under-the-fit-floor
+
+Dropped {dropped} row{s} rated under a fit of {min_fit}: none of them holds the data the node loads.
+
 ## delegate.content-not-written
 
 the generated content could not be written into the node ({error}). Report this honestly: nothing was changed
