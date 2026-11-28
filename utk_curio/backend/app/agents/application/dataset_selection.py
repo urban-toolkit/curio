@@ -27,6 +27,7 @@ from utk_curio.backend.app.agents.application.solve import node_solve as agents_
 from utk_curio.backend.app.agents.application.solve import simulation as agents_simulation
 from utk_curio.backend.app.agents.application.turns import grounding as agents_grounding
 from utk_curio.backend.app.agents.application.turns import roster as agents_roster
+from utk_curio.backend.app.agents.domain import labels
 from utk_curio.backend.app.agents.infrastructure import agent_jobs as agents_agent_jobs
 from utk_curio.backend.app.collaboration import dataflow_docs
 from utk_curio.backend.app.projects import editor_requests as projects_editor_requests
@@ -379,11 +380,11 @@ def _what_comes_next(user_key: str, rows: list[dict], state: dict, delegated: di
     """What comes of the pick, in one sentence, as the server decided it: the
     plan going on, the node's builder writing the loader, a portal file to
     import, a download or an install to wait for and what builds the loader
-    then, or what the user must do. Both chats' Source recorded turns end
-    with it, and the Finder's record keeps it (``next``), which a card the
-    pick left open shows in every tab. A Recorded card names only the pick
-    and where it comes from, so each chat says this once, in its turn. It
-    never promises a build nobody starts."""
+    then, or what the user must do. Both chats' Source recorded turns, kept
+    for the agents, end with it, and the Finder's record keeps it (``next``),
+    which the card says in every tab: after the pick on its Recorded line, and
+    under its Use this source while the pick leaves it open. It never
+    promises a build nobody starts."""
     status = (delegated or {}).get("status")
     reason = str((delegated or {}).get("reason") or "")
     if status in (PLAN_WAITING, "no-builder", "acquire-failed", OWNER_REVIEW, ADD_FAILED):
@@ -432,13 +433,15 @@ def _keep_what_comes_next(user_key: str, project_id: str, attachment_id: str, st
 
 def _say_the_source_is_recorded(user_key: str, project_id: str, spec: dict, attachment_id: str,
                                 rows: list[dict], state: dict, after: str, *, node_id: str) -> None:
-    """The Finder's chat says what was recorded and what comes next (*after*,
-    :func:`_what_comes_next`), once the selection's delegation is decided,
-    and so does every chat that asked for the candidates and holds their card
-    (the record's askers), each in the same words, naming the node as its
-    header does. *spec* is the dataflow the selection wrote. Read outside the
-    spec lock: a node with no title is named by its template's label, from
-    the package store."""
+    """The Finder's chat keeps, for the agents, what was recorded and what
+    comes next (*after*, :func:`_what_comes_next`), once the selection's
+    delegation is decided, and so does every chat that asked for the
+    candidates and holds their card (the record's askers), each in the same
+    words, naming the node as its header does. No chat draws the turn
+    (``forAgents``): the card's Recorded line says the pick and what comes
+    next (the record's ``next``), in every chat that holds it. *spec* is the
+    dataflow the selection wrote. Read outside the spec lock: a node with no
+    title is named by its template's label, from the package store."""
     try:
         names = ", ".join(str(r.get("name") or r.get("datasetId") or r.get("url")) for r in rows)
         lines = [
@@ -467,14 +470,14 @@ def _say_the_source_is_recorded(user_key: str, project_id: str, spec: dict, atta
         if isinstance(finder_session, str):
             sessions.append_turns(
                 user_key, project_id, finder_session, attachment_id,
-                [sessions.make_turn("agent", said, content=[card])],
+                [sessions.make_turn("agent", said, content=[card], for_agents=True)],
             )
         for asker in [a for a in agents_dataset_resolution.askers_of(state) if a != attachment_id]:
             asker_session = (attachments.get_attachment(spec, asker) or {}).get("sessionId")
             if isinstance(asker_session, str):
                 sessions.append_turns(
                     user_key, project_id, asker_session, asker,
-                    [sessions.make_turn("agent", said, content=[card])],
+                    [sessions.make_turn("agent", said, content=[card], for_agents=True)],
                 )
     except Exception:  # noqa: BLE001
         log.warning("Could not log the dataset selection for %s", attachment_id,
@@ -572,7 +575,7 @@ def _delegate_confirmed_fetch(
     # A plan that stopped at this node to wait for its source goes on with it
     # itself: started here too, the loader would be built twice.
     if released is not None:
-        return _plan_waiting(user_key, node_id, released)
+        return _plan_waiting(user_key, project_id, node_id, released)
     if not fetchable:
         return None
     try:
@@ -644,11 +647,32 @@ def _a_session_runs(user_key: str, project_id: str) -> bool:
 _GOES_ON_WITH = {"auto": "build", "step": "step", "node": "node"}
 
 
-def _plan_waiting(user_key: str, node_id: str, released: dict) -> dict:
+def _node_named(user_key: str, project_id: str, node_id: str) -> str:
+    """The node *node_id* by the name its header shows, whole words only, as
+    the card of its candidates names it, as the dataflow is now; "the loader"
+    when the dataflow no longer holds it, or cannot be read."""
+    try:
+        spec = dataflow_docs.read(user_key, project_id) or {}
+        node = next(
+            (n for n in (spec.get("dataflow") or {}).get("nodes") or []
+             if isinstance(n, dict) and n.get("id") == node_id),
+            None,
+        )
+        if node is None:
+            return "the loader"
+        return labels.on_a_word(agents_dataset_resolution.node_label(user_key, project_id, node), 120)
+    except Exception:  # noqa: BLE001 - the answer names the loader instead
+        log.warning("Could not name the node %s of a pick", node_id, exc_info=True)
+        return "the loader"
+
+
+def _plan_waiting(user_key: str, project_id: str, node_id: str, released: dict) -> dict:
     """What the pick's answer says when it ended a plan's wait for the node
     (*released*, an entry of ``simulation.follow_the_sources``), and how the
-    plan goes on. A Build & validate running now builds the loader, and a
-    running Step's next Step does: nothing more is to start
+    plan goes on, naming the node as its header does ("The Dataflow Builder
+    builds CPL branches from it."): the words the card's Recorded line ends
+    with (the record's ``next``). A Build & validate running now builds the
+    loader, and a running Step's next Step does: nothing more is to start
     (``continueWith`` None, ``running`` names the run). Otherwise the plan's
     agent goes on by itself, from the tab that picked, as the user was going
     (``waitedBy``): with Build & validate (``build``) after a Build &
@@ -657,19 +681,20 @@ def _plan_waiting(user_key: str, node_id: str, released: dict) -> dict:
     record says the cause of goes on with Build & validate when it paused on
     the loader, else with the row's Solve."""
     name = _plan_agent_name(user_key, released["coord"])
+    node = _node_named(user_key, project_id, node_id)
     running = released.get("running")
     continue_with = None if running else (
         _GOES_ON_WITH.get(str(released.get("waitedBy") or ""))
         or ("build" if released.get("pausedOn") else "node")
     )
     if running == "auto":
-        reason = f"the {name}'s Build & validate, running now, builds the loader from this source"
+        reason = f"the {name}'s Build & validate, running now, builds {node} from it"
     elif running == "step":
-        reason = f"the {name}'s next Step builds the loader from this source"
+        reason = f"the {name}'s next Step builds {node} from it"
     elif continue_with == "step":
         reason = f"the {name} goes on with its plan by one Step, as you were stepping"
     else:
-        reason = f"the {name} goes on with its plan and builds the loader from this source"
+        reason = f"the {name} builds {node} from it"
     return {
         "status": PLAN_WAITING,
         "attachmentId": released["attachmentId"],

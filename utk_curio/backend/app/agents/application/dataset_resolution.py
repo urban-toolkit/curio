@@ -1010,9 +1010,11 @@ def _mirror_candidates_turn(
 ) -> None:
     """The same candidates in the chat that asked for them (*asker_id*, the
     agent whose Solve or Build & validate reached the node): one line that
-    names the node and its Dataset Finder, which the asking agent's next runs
-    read in their context, and the card, a ``sourcePick`` part. The card is
-    no text, so no run reads it (``sessions.context_messages``), and its pick
+    asks for the node's source and counts what its Dataset Finder found
+    ("Pick a source for **CPL branches**. Its Dataset Finder found 4."),
+    which the asking agent's next runs read in their context, and the card, a
+    ``sourcePick`` part, its rows in the Finder's card's order. The card is no
+    text, so no run reads it (``sessions.context_messages``), and its pick
     posts on the route of the Finder (*finder_id*), which records it. Read
     outside the spec lock: a node with no title is named by its template's
     label, from the package store."""
@@ -1029,7 +1031,7 @@ def _mirror_candidates_turn(
             user_key, project_id, session_id, asker_id,
             [sessions.make_turn(
                 "agent",
-                f"**{label}** needs a source. Its {finder_name} found {_counted(total)}: pick one with Use this source.",
+                f"Pick a source for **{label}**. Its {finder_name} found {total}.",
                 content=[{
                     "type": "sourcePick",
                     "finderAttachmentId": finder_id,
@@ -1037,8 +1039,10 @@ def _mirror_candidates_turn(
                     "nodeLabel": label,
                     **({"discoveryId": part["discoveryId"]} if part.get("discoveryId") else {}),
                     "lanes": part.get("lanes") or {},
-                    # Its lanes as the Finder's card draws them, best first.
+                    # Its lanes and its rows as the Finder's card draws them,
+                    # best first.
                     **({"laneOrder": part["laneOrder"]} if part.get("laneOrder") else {}),
+                    **({"rowOrder": part["rowOrder"]} if part.get("rowOrder") else {}),
                 }],
             )],
         )
