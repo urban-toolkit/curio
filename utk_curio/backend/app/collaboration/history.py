@@ -803,6 +803,21 @@ def close_typing(entry, *, sid: Optional[str] = None) -> None:
             _close(entry, key)
 
 
+def end_typing_in(user_key: str, project_id: str, node_ids: Iterable[str]) -> None:
+    """End the typing under way in each of *node_ids*, each its point now,
+    the one that came first first, so a version holds it before what comes
+    next: a plan's Undo, which takes the nodes out. Left under way, it would
+    end after, with no node to read its code from. Typing that left the code
+    as it began makes no point (:func:`_close`)."""
+    wanted = {str(node) for node in node_ids}
+    with _held(user_key, project_id) as entry:
+        state = _kept(entry)
+        if state is None:
+            return
+        for _end, key in sorted((typing.end, key) for key, typing in state.typing.items() if typing.node in wanted):
+            _close(entry, key)
+
+
 def next_due(entry) -> Optional[float]:
     """When the open doc's oldest typing is due as a point (its clock),
     read without its lock."""
@@ -1399,6 +1414,61 @@ def entry_in_use(records: list[dict], code: Optional[str]) -> Optional[int]:
     return max(ids, default=None)
 
 
+def typed_since(user_key: str, project_id: str, point: dict, node_ids: Iterable[str]) -> dict[str, list[dict]]:
+    """Who typed into each of *node_ids* since the point *point*, while the
+    node holds what they typed: each person (``by``, as a point names them)
+    whose typing in the node, or edit in its body, is a point made since or
+    is under way, after the last change an agent made to the node's code, in
+    the order the log has them. By node, each person once, in the order they
+    first typed there; a node no one typed into so, and one the doc no longer
+    holds, is left out. Typing under way that left the code as it began is
+    none, as it makes no point (:func:`_close`). Read under the doc's lock,
+    so typing under way counts as it stands."""
+    wanted = [str(node) for node in node_ids]
+    with _held(user_key, project_id) as entry:
+        points_ = _read_points(entry.folder())
+        at = next((i for i, p in enumerate(points_) if p.get("id") == point.get("id")), None)
+        if at is None:
+            return {}
+        # Each doc's log in the order it began, the open doc's last.
+        rank: dict[str, int] = {}
+        for p in points_:
+            if "doc" in p:
+                rank.setdefault(p["doc"], len(rank))
+        rank.setdefault(entry.doc_id, len(rank))
+        # Each change to a wanted node's code: where the log has it, who made it, and whether a person typed it.
+        changes: dict[str, list[tuple]] = {node: [] for node in wanted}
+        for order, p in enumerate(points_[at:]):
+            if "doc" not in p:
+                continue
+            by = p.get("by") or {}
+            typed = p.get("kind") in (TYPING, EDIT) and by.get("kind") == "person"
+            for note in p.get("notes") or []:
+                node = str(note.get("node"))
+                if node in changes and note.get("kind") == _NOTE_EDIT:
+                    changes[node].append(((rank[p["doc"]], p.get("day") or "", p.get("end", 0), order), by, typed))
+        state = _kept(entry)
+        for typing in state.typing.values() if state is not None else ():
+            if typing.node in changes and (typing.parent is None
+                                           or _sha(_code_in(entry.doc, typing.node)) != typing.parent):
+                place = (rank.get(typing.doc, len(rank)), typing.day or "", typing.end, len(points_))
+                changes[typing.node].append((place, typing.by, True))
+        out: dict[str, list[dict]] = {}
+        for node in wanted:
+            if _code_in(entry.doc, node) is None:
+                continue
+            people: list[dict] = []
+            for _place, by, typed in sorted(changes[node], key=lambda change: change[0]):
+                if not typed:
+                    # An agent's code replaced what anyone typed before it.
+                    people = []
+                elif all(_account(by) != _account(seen) for seen in people):
+                    people.append(dict(by))
+            if people:
+                out[node] = people
+        return out
+
+
 # ---------------------------------------------------------------------------
 # What a tab, or a person, adds to the history
 # ---------------------------------------------------------------------------
@@ -1600,7 +1670,7 @@ def saved(user_key: str, project_id: str, by: dict) -> dict:
 
 
 def put_back(user_key: str, project_id: str, point_id: str, by: dict, *, keep: Iterable[str] = (),
-             target: Optional[dict] = None, expect: Optional[dict] = None) -> dict:
+             target: Optional[dict] = None, expect: Optional[dict] = None, dry_run: bool = False) -> dict:
     """Put the version *point_id* back: one transaction makes the doc hold
     it, but for what :data:`KEPT_BY_A_PUT_BACK` and *keep* name, for every
     tab, and a version named after it, its parent the version put back.
@@ -1616,7 +1686,9 @@ def put_back(user_key: str, project_id: str, point_id: str, by: dict, *, keep: I
     back, which keep theirs. ``removed``: the nodes it took out, which the
     tab that asked for it tells the others it removed
     (``presence.noteRemoval``). ``kept``, with *expect*: the fields the doc
-    held otherwise, which keep their value."""
+    held otherwise, which keep their value. With *dry_run*, it checks all of
+    that but writes nothing: refused as it would be, else the nodes it would
+    take out (``removed``)."""
     folder = _folder(user_key, project_id)
     point = next((p for p in _read_points(folder) if p["id"] == point_id and _listed(p)), None)
     if point is None:
@@ -1638,6 +1710,8 @@ def put_back(user_key: str, project_id: str, point_id: str, by: dict, *, keep: I
     changed = _changes_what_it_keeps(flow, spec["dataflow"], kept)
     if changed:
         raise KeptWouldChange(changed)
+    if dry_run:
+        return {"refused": [], "removed": removed}
     checked = {name: value for name, value in (expect or {}).items() if name not in kept}
     if checked:
         # The write's base holds what the doc must still hold for each to land.
