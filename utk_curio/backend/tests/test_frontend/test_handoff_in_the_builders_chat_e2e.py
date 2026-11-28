@@ -10,10 +10,14 @@ pick that builds it.
    build pauses on the loader. The rail's entry of the Finder and the Finder's
    badge on the loader show the dot of an agent that waits for you.
 3. **Use this source** on the card in the Builder's chat records the pick on
-   the Finder. The card reads Recorded, with the pick and where it comes
-   from, in both chats; the turn under it says what comes of the pick, which
-   nothing else in the chat says, and the dots go. The Builder goes on with
-   Build & validate by itself, which builds the loader from that dataset.
+   the Finder. The card reads Recorded, with the pick, where it comes from
+   and what comes of it, in both chats, which nothing else in the chat says:
+   the pick's Source recorded turns are the agents' alone (board S05). The
+   dots go. The Builder goes on with Build & validate by itself, which builds
+   the loader from that dataset.
+4. **The Finder's chat** (board S08) says who asked it for what, in one quiet
+   line, and draws neither the candidates its reply printed, which its card
+   shows, nor the card of its run's trace.
 
 Driven by the scripted provider, so no model is called. Nothing is drawn.
 
@@ -79,12 +83,13 @@ CANDIDATES = json.dumps({"datasetCandidates": {"lanes": {
 }}})
 #: The loader, once its source is picked.
 LOADER = f'import pandas as pd\nreturn pd.read_csv(curio_data_path("{DATASET}"))'
-#: What the card says once the pick is recorded, in both chats: the pick and
-#: where it comes from, and no more.
-RECORDED = "Recorded: Example table: pedestrians per hour (Data Catalog)."
-#: What comes of the pick, as the server says it: the Source recorded turn
-#: under the card ends with it, in both chats, and nothing else says it.
-NEXT = "The Dataflow Builder goes on with its plan and builds the loader from this source."
+#: What comes of the pick, as the server says it (the Finder's record's
+#: ``next``): the card's Recorded line ends with it, in both chats, and
+#: nothing else says it.
+NEXT = f"The Dataflow Builder builds {LOADER_TITLE} from it."
+#: What the card says once the pick is recorded, in both chats: the pick,
+#: where it comes from, and what comes of it (board S05).
+RECORDED = f"Recorded: Example table: pedestrians per hour (Data Catalog). {NEXT}"
 
 #: How long a Build & validate pass may take on a loaded runner.
 BUILD_S = 240.0
@@ -170,9 +175,10 @@ def test_the_builders_chat_holds_the_loaders_candidates_and_its_pick_builds_the_
     open_plan_actions(panel).get_by_role("menuitem", name=re.compile(r"^Build & validate plan")).click()
     card = panel.get_by_role("group", name=f"Sources for {LOADER_TITLE}")
     expect(card).to_be_visible(timeout=BUILD_S * 1000)
-    # The line over the card names the loader and counts its candidates.
+    # The line over the card asks for the loader's source and counts what its
+    # Finder found (board S04).
     expect(panel.get_by_text(
-        f"{LOADER_TITLE} needs a source. Its Dataset Finder found 1 candidate: pick one with Use this source.",
+        f"Pick a source for {LOADER_TITLE}. Its Dataset Finder found 1.",
         exact=True,
     )).to_have_count(1)
     # The plan line names the pause once, and goes to the card: the pick goes
@@ -222,9 +228,11 @@ def test_the_builders_chat_holds_the_loaders_candidates_and_its_pick_builds_the_
     expect(rail.get_by_role("button", name=f"Dataset Finder on {LOADER_TITLE}", exact=True)).to_be_visible(
         timeout=30000)
     expect(badge).to_have_count(0, timeout=30000)
-    expect(panel.get_by_text(f"Source recorded for {LOADER_TITLE}", exact=False)).to_be_visible(timeout=30000)
-    # The pick is said once: what comes of it is the turn's alone.
+    # The pick is said once, on the card: the Source recorded turn is the
+    # agents' alone. Read once the card says Recorded, so the note the tab's
+    # own pick showed under Use this source is gone with it.
     expect(panel.get_by_text(NEXT, exact=False)).to_have_count(1, timeout=30000)
+    expect(panel.get_by_text(f"Source recorded for {LOADER_TITLE}", exact=False)).to_have_count(0)
     # The server approves the loader before the tab's build ends: the frame
     # waits until the plan line has no Stop, so no build clock ticks in it.
     expect(panel.get_by_role("button", name=re.compile(r"^(Stop|Stopping…)$"))).to_have_count(0, timeout=60000)
@@ -261,12 +269,20 @@ def test_the_builders_chat_holds_the_loaders_candidates_and_its_pick_builds_the_
     expect(own.get_by_role("status")).to_have_text(RECORDED, timeout=30000)
     expect(finder_panel.get_by_role("group", name="Solve this node")).to_have_count(0)
     # Its own turns count the candidates and name the loader, and the pick is
-    # said once here too.
+    # said once here too, on the card.
     expect(finder_panel.get_by_text(
         f"I found 1 candidate for {LOADER_TITLE}. Pick one with Use this source.", exact=True,
     )).to_have_count(1)
-    expect(finder_panel.get_by_text(f"Source recorded for {LOADER_TITLE}:", exact=False)).to_have_count(1)
     expect(finder_panel.get_by_text(NEXT, exact=False)).to_have_count(1, timeout=30000)
+    expect(finder_panel.get_by_text(f"Source recorded for {LOADER_TITLE}", exact=False)).to_have_count(0)
+    # Board S08: who asked it for what, in one quiet line; neither the
+    # candidates its reply printed, which the card shows, nor the card of its
+    # run's trace.
+    expect(finder_panel.get_by_text(
+        f"Asked by the {DFB_NAME}: find a source for {LOADER_TITLE}.", exact=True,
+    )).to_have_count(1)
+    expect(finder_panel.get_by_text("datasetCandidates", exact=False)).to_have_count(0)
+    expect(finder_panel.get_by_text("Delegated task", exact=False)).to_have_count(0)
     own.scroll_into_view_if_needed()
     expect(own).to_be_in_viewport()
     page.mouse.move(0, 0)

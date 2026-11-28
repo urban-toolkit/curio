@@ -617,7 +617,9 @@ class TestDiscoveryIsInitiated:
         ), part
         assert part["lanes"] == cards[0]["lanes"]
         assert "Load boundaries" in turn["text"] and "Dataset Finder" in turn["text"], turn["text"]
-        assert "Use this source" in turn["text"], turn["text"]
+        # It asks for the node's source (board S04), which the card's Use
+        # this source picks.
+        assert turn["text"].startswith("Pick a source for **Load boundaries**."), turn["text"]
         # The line reaches the Builder's model; the card does not.
         context = "\n".join(m["content"] for m in sessions.context_messages(builder_turns))
         assert turn["text"] in context, context
@@ -659,12 +661,11 @@ class TestDiscoveryIsInitiated:
             ],
             "the loader's row": body["results"][h.load]["reason"],
         }
-        # One comparison, so a failure shows every place that reads wrong.
+        # One comparison, so a failure shows every place that reads wrong. The
+        # chat that asked reads as board S04 draws it.
         assert said == {
             "the Finder's chat": [f"I found {words} for Load boundaries. Pick one with Use this source."],
-            "the chat that asked": [
-                f"**Load boundaries** needs a source. Its Dataset Finder found {words}: pick one with Use this source."
-            ],
+            "the chat that asked": [f"Pick a source for **Load boundaries**. Its Dataset Finder found {found}."],
             "the loader's row": f"awaiting your dataset selection: {words} awaiting your selection",
         }
 
@@ -1158,7 +1159,8 @@ class TestBuildAndValidateWaitsForTheSource:
         assert picked.get("status") == 200, picked
         delegated = (picked.get("body") or {}).get("delegated") or {}
         assert delegated.get("status") == "plan-waiting", picked
-        assert "Build & validate, running now, builds the loader" in delegated.get("reason", ""), delegated
+        # It names the loader, as the card's Recorded line does (board S05).
+        assert "Build & validate, running now, builds Load parks from it" in delegated.get("reason", ""), delegated
         # The running pass builds it: nothing more is to start after the pick.
         assert (delegated.get("running"), delegated.get("continueWith")) == ("auto", None), delegated
         assert [(p["action"], p["ref"]) for kind, p in events if kind == "action_result"] == [
@@ -1300,7 +1302,8 @@ class TestTheChatThatAskedGoesOn:
             "plan-waiting", "build", "load", None,
         ), delegated
         assert "continue in" not in delegated["reason"], delegated
-        assert "Dataflow Builder goes on with its plan" in delegated["reason"], delegated
+        # The words the card's Recorded line ends with (board S05).
+        assert delegated["reason"] == "the Dataflow Builder builds Load boundaries from it", delegated
 
     def test_a_pick_for_a_loader_a_rows_solve_left_waiting_goes_on_with_that_rows_solve(
         self, client, user_and_token, tmp_curio, monkeypatch

@@ -3202,7 +3202,7 @@ describe("AgentChatPanel: a node's candidates in the chat that asked for them", 
   };
   const ASKED: AgentSessionTurn = {
     role: "agent" as const,
-    text: "**Load boundaries** needs a source. Its Dataset Finder found 1 candidate: pick one with Use this source.",
+    text: "Pick a source for **Load boundaries**. Its Dataset Finder found 1.",
     content: [{ type: "sourcePick" as const, finderAttachmentId: "att-df", nodeId: "n1", nodeLabel: "Load boundaries", lanes: LANES }],
   };
   const FOUND: AgentSessionTurn = {
@@ -3229,7 +3229,7 @@ describe("AgentChatPanel: a node's candidates in the chat that asked for them", 
     ]);
   });
 
-  it("opens the Finder's chat from the card", () => {
+  it("opens the Finder's chat from the card when none fits", () => {
     const onOpenAgentChat = jest.fn();
     renderPanel({
       attachment: BUILDER,
@@ -3240,7 +3240,7 @@ describe("AgentChatPanel: a node's candidates in the chat that asked for them", 
       agentNameOf: (id: string) => (id === "att-df" ? "Dataset Finder" : null),
     });
     const card = screen.getByRole("group", { name: "Sources for Load boundaries" });
-    fireEvent.click(within(card).getByRole("button", { name: "Its Dataset Finder's chat" }));
+    fireEvent.click(within(card).getByRole("button", { name: "None fits? Ask its Dataset Finder" }));
     expect(onOpenAgentChat).toHaveBeenCalledWith("att-df");
   });
 
@@ -3257,7 +3257,9 @@ describe("AgentChatPanel: a node's candidates in the chat that asked for them", 
     expect(within(own).queryByRole("button", { name: "Use this source" })).toBeNull();
   });
 
-  it("the Finder's own card reads Use this source and says the chat that asked holds it too", () => {
+  // Board S04 (G64): the card says nothing of the other chats that hold it; a
+  // pick in any of them reads Recorded in all.
+  it("the Finder's own card reads Use this source and names no other chat", () => {
     renderPanel({
       attachment: FINDER,
       targetName: "Load boundaries",
@@ -3267,7 +3269,8 @@ describe("AgentChatPanel: a node's candidates in the chat that asked for them", 
     });
     const own = screen.getByRole("group", { name: "Sources for Load boundaries" });
     expect(within(own).getByRole("button", { name: "Use this source" })).toBeInTheDocument();
-    expect(own).toHaveTextContent("The same card is in the Dataflow Builder's chat. A pick in either shows in both.");
+    expect(own).not.toHaveTextContent("The same card is in");
+    expect(own).not.toHaveTextContent("Dataflow Builder");
   });
 
   it("a Dataset Finder's chat has no Solve this node: its agent solves no node", () => {
@@ -3378,7 +3381,7 @@ describe("AgentChatPanel: Solve this node points at the card in its own chat", (
         targetName: "Load boundaries",
         turns: [{
           role: "agent" as const,
-          text: "**Load boundaries** needs a source. Its Dataset Finder found 1 candidate: pick one with Use this source.",
+          text: "Pick a source for **Load boundaries**. Its Dataset Finder found 1.",
           content: [{
             type: "sourcePick" as const, finderAttachmentId: "att-df", nodeId: "n1", nodeLabel: "Load boundaries",
             lanes: { external: [{ name: "Chicago areas", sourceType: "portal" as const, url: "https://data.example.org/areas.geojson" }], catalog: [] },
@@ -3473,7 +3476,7 @@ describe("AgentChatPanel: the plan line's Show its sources", () => {
   };
   const ASKED: AgentSessionTurn = {
     role: "agent" as const,
-    text: "**Load boundaries** needs a source. Its Dataset Finder found 1 candidate: pick one with Use this source.",
+    text: "Pick a source for **Load boundaries**. Its Dataset Finder found 1.",
     content: [{
       type: "sourcePick" as const, finderAttachmentId: "att-df", nodeId: "n1", nodeLabel: "Load boundaries",
       lanes: { external: [{ name: "Chicago areas", sourceType: "portal" as const, url: "https://data.example.org/areas.geojson" }], catalog: [] },
@@ -3592,7 +3595,7 @@ describe("AgentChatPanel: a candidates card follows its Finder's record", () => 
    * Finder, *discoveryId*. */
   const asked = (discoveryId: string, row = AREAS): AgentSessionTurn => ({
     role: "agent" as const,
-    text: "**Load boundaries** needs a source. Its Dataset Finder found 1 candidate: pick one with Use this source.",
+    text: "Pick a source for **Load boundaries**. Its Dataset Finder found 1.",
     content: [{
       type: "sourcePick" as const, finderAttachmentId: "att-df", nodeId: "n1", nodeLabel: "Load boundaries",
       discoveryId, lanes: { external: [row], catalog: [] },
@@ -3679,7 +3682,7 @@ describe("AgentChatPanel: a candidates card follows its Finder's record", () => 
       pickedFrom: "d2",
       askedBy: "dfb",
       askers: ["dfb"],
-      next: "The Dataflow Builder goes on with its plan and builds the loader from this source.",
+      next: "The Dataflow Builder builds Load boundaries from it.",
     });
     renderPanel({
       attachment: { ...BUILDER, waitsForYou: [] },
@@ -3690,11 +3693,13 @@ describe("AgentChatPanel: a candidates card follows its Finder's record", () => 
     const [older, newer] = cards();
     expect(within(older).getByRole("status")).not.toHaveTextContent("Recorded");
     expect(within(older).getByRole("status")).toHaveTextContent("Closed: newer candidates replaced these.");
-    expect(within(newer).getByRole("status")).toHaveTextContent(/^Recorded: Chicago blocks \(City of Chicago\)\.$/);
+    expect(within(newer).getByRole("status")).toHaveTextContent(
+      /^Recorded: Chicago blocks \(City of Chicago\)\. The Dataflow Builder builds Load boundaries from it\.$/,
+    );
   });
 
-  it("says the pick once in each chat: the card names it and where it comes from, and the turn under it what comes of it", () => {
-    const NEXT = "The Dataflow Builder goes on with its plan and builds the loader from this source.";
+  it("says the pick once in each chat: the card names it, where it comes from and what comes of it, and draws no turn of the agents'", () => {
+    const NEXT = "The Dataflow Builder builds Load boundaries from it.";
     const picked = finder({
       status: "resolved",
       picks: [{ ...BLOCKS, provider: "City of Chicago" }],
@@ -3705,13 +3710,15 @@ describe("AgentChatPanel: a candidates card follows its Finder's record", () => 
       next: NEXT,
     });
     /** The turn the pick writes in a chat that holds the card, as the server
-     * words it: *who* is the node's name, the same in both chats. */
+     * words it and keeps it, for the agents (board S08): *who* is the node's
+     * name, the same in both chats. */
     const recordedTurn = (who: string): AgentSessionTurn => ({
       role: "agent" as const,
       text: `Source recorded for ${who}: Chicago blocks. ${NEXT}`,
+      forAgents: true,
       content: [{ type: "card" as const, kind: "result", title: "Dataset selection recorded", lines: ["external · Chicago blocks · verified"] }],
     });
-    // The chat that asked: the card, then the turn the pick wrote there.
+    // The chat that asked: the card, and the turn the pick wrote there.
     const first = renderPanel({
       attachment: { ...BUILDER, waitsForYou: [] },
       turns: [asked("d2", BLOCKS), recordedTurn("Load boundaries")],
@@ -3719,10 +3726,14 @@ describe("AgentChatPanel: a candidates card follows its Finder's record", () => 
       onRecordSourcePick: jest.fn(),
     });
     const [card] = cards();
-    expect(within(card).getByRole("status")).toHaveTextContent(/^Recorded: Chicago blocks \(City of Chicago\)\.$/);
+    expect(within(card).getByRole("status")).toHaveTextContent(
+      /^Recorded: Chicago blocks \(City of Chicago\)\. The Dataflow Builder builds Load boundaries from it\.$/,
+    );
     expect(screen.getAllByText(NEXT, { exact: false })).toHaveLength(1);
+    expect(screen.queryByText(/^Source recorded for/)).toBeNull();
+    expect(screen.queryByText("Dataset selection recorded")).toBeNull();
     first.unmount();
-    // The Finder's own chat: the same card, then its own turn.
+    // The Finder's own chat: the same card, and its own turn.
     renderPanel({
       attachment: picked,
       targetName: "Load boundaries",
@@ -3730,8 +3741,11 @@ describe("AgentChatPanel: a candidates card follows its Finder's record", () => 
       onRecordDatasetSelection: jest.fn(),
     });
     const [own] = cards();
-    expect(within(own).getByRole("status")).toHaveTextContent(/^Recorded: Chicago blocks \(City of Chicago\)\.$/);
+    expect(within(own).getByRole("status")).toHaveTextContent(
+      /^Recorded: Chicago blocks \(City of Chicago\)\. The Dataflow Builder builds Load boundaries from it\.$/,
+    );
     expect(screen.getAllByText(NEXT, { exact: false })).toHaveLength(1);
+    expect(screen.queryByText(/^Source recorded for/)).toBeNull();
   });
 
   it("is closed once no pick is needed: a skip, whose source is grounded already", () => {
@@ -3778,7 +3792,9 @@ describe("AgentChatPanel: a candidates card follows its Finder's record", () => 
     expect(within(older).getByRole("status")).toHaveTextContent("Recorded: Chicago areas.");
   });
 
-  it("the Finder's own card names every chat that holds the same card", () => {
+  // Board S04 (G64): the card names no other chat that holds it; a pick in
+  // any of them reads Recorded in all.
+  it("the Finder's own card names no other chat that holds the same card", () => {
     renderPanel({
       attachment: finder({ ...PENDING_D2, askers: ["dfb", "nb1"] }, ["n1"]),
       targetName: "Load boundaries",
@@ -3787,9 +3803,10 @@ describe("AgentChatPanel: a candidates card follows its Finder's record", () => 
       agentNameOf: (id: string) => ({ dfb: "Dataflow Builder", nb1: "Node Builder" } as Record<string, string>)[id] ?? null,
     });
     const [own] = cards();
-    expect(own).toHaveTextContent(
-      "The same card is in the Dataflow Builder's and the Node Builder's chats. A pick in any shows in all.",
-    );
+    expect(within(own).getByRole("button", { name: "Use this source" })).toBeInTheDocument();
+    expect(own).not.toHaveTextContent("The same card is in");
+    expect(own).not.toHaveTextContent("Dataflow Builder");
+    expect(own).not.toHaveTextContent("Node Builder");
   });
 });
 

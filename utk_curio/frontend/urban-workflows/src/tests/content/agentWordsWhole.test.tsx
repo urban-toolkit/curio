@@ -107,9 +107,9 @@ describe("the candidates card's lines say with no dash what a dash said", () => 
       },
     };
     render(<AgentDatasetCandidatesCard part={part} />);
-    const row = screen.getByRole("group", { name: "External sources" });
-    expect(within(row).getByText(/^Download it from the portal/)).toHaveTextContent(
-      'Download it from the portal: the data URL answered with a web page titled "Downloads"',
+    const row = screen.getByRole("listitem");
+    expect(within(row).getByText(/^Manual download/)).toHaveTextContent(
+      'Manual download: the data URL answered with a web page titled "Downloads".',
     );
   });
 

@@ -4,8 +4,9 @@ import { render, screen, fireEvent, waitFor, act } from "@testing-library/react"
 /**
  * The handoff's provider side: after the user's pick on a candidates card, the
  * Dataflow Builder goes on with its plan by itself, and the chat that asked for
- * the candidates shows its Source recorded turn. The open chat is read again
- * when the listing says it waits on a node whose card it does not hold.
+ * the candidates is read again, for its Source recorded turn, which its agent
+ * reads and its card's Recorded line says. The open chat is read again when
+ * the listing says it waits on a node whose card it does not hold.
  */
 
 jest.mock("../../providers/FlowProvider", () => ({
@@ -59,7 +60,7 @@ const FINDER: AgentAttachment = {
 const URL = "https://data.example.org/areas.geojson";
 const PICK_TURN = {
   role: "agent" as const,
-  text: "**Load boundaries** needs a source. Its Dataset Finder found 1 candidate: pick one with Use this source.",
+  text: "Pick a source for **Load boundaries**. Its Dataset Finder found 1.",
   content: [{
     type: "sourcePick" as const,
     finderAttachmentId: "att-df",
@@ -186,7 +187,7 @@ describe("the open chat is read again when the listing says it waits on a node w
     api.listAttachments.mockResolvedValue({ attachments: [{ ...BUILDER, waitsForYou: ["n1"] }, FINDER] });
     api.getSession.mockResolvedValue({ attachmentId: "dfb", sessionId: "s1", turns: [PICK_TURN] });
     fireEvent.click(screen.getByText("reload"));
-    await waitFor(() => expect(screen.getByTestId("builder-turns")).toHaveTextContent("needs a source"));
+    await waitFor(() => expect(screen.getByTestId("builder-turns")).toHaveTextContent("Pick a source for"));
     expect(api.getSession).toHaveBeenCalledTimes(2);
     // The listing again, the card already in the chat: no further read.
     fireEvent.click(screen.getByText("reload"));
@@ -203,7 +204,7 @@ describe("the open chat is read again when the listing says it waits on a node w
     renderProvider();
     await waitFor(() => expect(api.listAttachments).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByText("open-builder"));
-    await waitFor(() => expect(screen.getByTestId("builder-turns")).toHaveTextContent("needs a source"));
+    await waitFor(() => expect(screen.getByTestId("builder-turns")).toHaveTextContent("Pick a source for"));
     const readsOfTheBuilder = () => api.getSession.mock.calls.filter(([, id]) => id === "dfb").length;
     const before = readsOfTheBuilder();
     // Another tab's Build & validate asked the loader's Finder again: its

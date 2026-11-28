@@ -30,26 +30,38 @@ const PART: AgentDatasetCandidatesPart = {
   },
 };
 
-describe("AgentDatasetCandidatesCard (dev/50 — the docs/06 two-lane surface)", () => {
-  it("renders both labeled lanes with informational rows and installed chips", () => {
+describe("AgentDatasetCandidatesCard (dev/50, the Sources card of board S04)", () => {
+  it("renders one list of informational rows: where each comes from, why it fits, and its warning", () => {
     render(<AgentDatasetCandidatesCard part={PART} />);
-    expect(screen.getByRole("group", { name: "External sources" })).toBeInTheDocument();
-    expect(screen.getByRole("group", { name: "From your Data Catalog" })).toBeInTheDocument();
+    // One list: the lanes are no groups of their own (board S04).
+    expect(screen.queryByRole("group", { name: "External sources" })).toBeNull();
+    expect(screen.queryByRole("group", { name: "From your Data Catalog" })).toBeNull();
+    expect(screen.getAllByRole("listitem").map((row) => row.querySelector("input")?.getAttribute("aria-label"))).toEqual([
+      "Select NOAA Climate Data API",
+      "Select Cities",
+      "Select Roads",
+    ]);
     expect(screen.getByText("NOAA Climate Data API")).toBeInTheDocument();
-    // The fit's score, then why after a colon: no dash.
-    expect(screen.getByText("Fit 90/100: direct match")).toBeInTheDocument();
-    expect(screen.getByText("API token required")).toBeInTheDocument();
-    expect(screen.getByText("Installed")).toBeInTheDocument();
-    expect(screen.getAllByText("Not installed")).toHaveLength(1);
+    expect(screen.getByText("NOAA · json")).toBeInTheDocument();
+    // Why it fits, with no score.
+    expect(screen.getByText("direct match")).toBeInTheDocument();
+    expect(screen.queryByText(/Fit 90\/100/)).toBeNull();
+    // What it needs is its one warning, a sentence.
+    expect(screen.getByText("API token required.")).toBeInTheDocument();
+    // No chip says whether a dataset is installed: a pick adds it.
+    expect(screen.queryByText("Installed")).toBeNull();
+    expect(screen.queryByText("Not installed")).toBeNull();
+    expect(screen.getAllByText("Data Catalog")).toHaveLength(2);
   });
 
   it("selection is the only action a row takes (docs/06)", () => {
     render(<AgentDatasetCandidatesCard part={PART} />);
     expect(screen.getAllByRole("checkbox")).toHaveLength(3);
-    // The one button per catalog row opens what it names, read-only; nothing
+    // A row's buttons open what it names, read-only: the link the runtime did
+    // not vouch for, as plain text, and each catalog row's details; nothing
     // here applies, installs or downloads.
     const buttons = screen.getAllByRole("button");
-    expect(buttons.map((b) => b.textContent)).toEqual(["View details", "View details"]);
+    expect(buttons.map((b) => b.textContent)).toEqual(["How to get it", "View details", "View details"]);
   });
 
   it("a catalog row opens the dataset's details, like the same row anywhere else", () => {
@@ -84,15 +96,24 @@ describe("AgentDatasetCandidatesCard (dev/50 — the docs/06 two-lane surface)",
       },
     };
     render(<AgentDatasetCandidatesCard part={part} />);
-    const links = screen.getAllByRole("link", { name: "View on the portal ↗" });
+    const links = screen.getAllByRole("link", { name: "Portal ↗" });
     expect(links.map((a) => a.getAttribute("href"))).toEqual([
       "https://ok.example/x",
       "https://source.example/r",
     ]);
     links.forEach((a) => expect(a).toHaveAttribute("rel", expect.stringContaining("noopener")));
-    // Unvouched URLs stay plain text, as before.
-    expect(screen.getByText("https://claimed.example/y")).toBeInTheDocument();
-    expect(screen.getByText("javascript:alert(1)")).toBeInTheDocument();
+    // Unvouched URLs stay plain text, under their row's How to get it.
+    for (const [name, url] of [
+      ["Model claim", "https://claimed.example/y"],
+      ["Bad scheme", "javascript:alert(1)"],
+    ]) {
+      const row = screen.getByRole("checkbox", { name: `Select ${name}` }).closest("li") as HTMLElement;
+      expect(within(row).queryByText(url)).toBeNull();
+      fireEvent.click(within(row).getByRole("button", { name: "How to get it" }));
+      expect(within(row).getByText(url).tagName).toBe("SPAN");
+      expect(within(row).queryByRole("link")).toBeNull();
+    }
+    expect(screen.getAllByRole("link")).toHaveLength(2);
   });
 
   it("hostile metadata renders inert as plain text", () => {
@@ -138,7 +159,10 @@ describe("AgentDatasetCandidatesCard (dev/50 — the docs/06 two-lane surface)",
 });
 
 describe("AgentDatasetCandidatesCard — dev/67-4 verification verdicts", () => {
-  it("renders the runtime's verdict per external row — verified or loud", () => {
+  // Board S04: a row carries a warning, never a chip, so a link that answered
+  // data says nothing more, and every other verdict is its row's warning, in
+  // the words of the one label table.
+  it("says the runtime's verdict of each external row that gave no data, loud, and nothing of one that did", () => {
     render(
       <AgentDatasetCandidatesCard
         part={{
@@ -171,12 +195,17 @@ describe("AgentDatasetCandidatesCard — dev/67-4 verification verdicts", () => 
         onComposePrompt={jest.fn()}
       />,
     );
-    expect(screen.getByText("Verified ✓")).toBeInTheDocument();
-    expect(screen.getByText("Unverified: never checked")).toBeInTheDocument();
+    const warningOf = (name: string) =>
+      (screen.getByRole("checkbox", { name: `Select ${name}` }).closest("li") as HTMLElement).querySelector(".warning");
+    expect(warningOf("Chicago Heat")).toBeNull();
+    expect(screen.queryByText("Verified ✓")).toBeNull();
+    expect(warningOf("Guessed Portal")).toHaveTextContent(/^Unverified: never checked\.$/);
     // An error answer says what it answered (step 5.4); Unreachable is for a
-    // link that gave no answer.
-    expect(screen.getByText("Answered 404 ✗")).toBeInTheDocument();
-    expect(screen.getByText("Unreachable ✗")).toBeInTheDocument();
+    // link that gave no answer. Neither is usable as offered.
+    expect(warningOf("Dead API")).toHaveTextContent(/^Answered 404: not usable as offered\.$/);
+    expect(warningOf("Down API")).toHaveTextContent(/^Unreachable: not usable as offered\.$/);
+    // What the probe saw is on the warning's tooltip.
+    expect(warningOf("Dead API")).toHaveAttribute("data-tooltip", "the endpoint answered 404");
   });
 });
 
@@ -194,9 +223,10 @@ describe("AgentDatasetCandidatesCard — dev/114 the Node Builder chat variant",
       "Build the data-loading node. Load from the Data Catalog: Cities (imported.abc@1); " +
         "fetch from: NOAA Climate Data API (https://api.noaa.gov).",
     );
-    // Still only the read-only View details buttons; the prompt stays the
-    // vehicle (docs/06).
+    // Still only the read-only buttons, How to get it and View details; the
+    // prompt stays the vehicle (docs/06).
     expect(screen.getAllByRole("button").map((b) => b.textContent)).toEqual([
+      "How to get it",
       "View details",
       "View details",
     ]);
@@ -242,14 +272,24 @@ describe("AgentDatasetCandidatesCard — dev/132 the portal download and its Imp
     },
   };
 
+  /** Opens the How to get it of the row named *name*. */
+  const openHowTo = (name: string) => {
+    const row = screen.getByRole("checkbox", { name: `Select ${name}` }).closest("li") as HTMLElement;
+    fireEvent.click(within(row).getByRole("button", { name: "How to get it" }));
+    return row;
+  };
+
   it("teaches the download only for the row that needs it", () => {
     render(<AgentDatasetCandidatesCard part={MANUAL} />);
-    expect(screen.getByText(/Download it from the portal/)).toBeInTheDocument();
     expect(
-      screen.getByText(/Open the portal page in your browser/),
+      screen.getByText('Manual download: the data URL answered with a web page titled "Downloads".'),
     ).toBeInTheDocument();
+    // The portal's steps are under its How to get it.
+    const row = openHowTo("Setores GeoSampa");
+    expect(within(row).getByText(/Open the portal page in your browser/)).toBeInTheDocument();
     // The fetchable row teaches nothing: its code is written for it.
-    expect(screen.getAllByText(/Download it from the portal/)).toHaveLength(1);
+    expect(screen.getAllByText(/^Manual download/)).toHaveLength(1);
+    expect(screen.getAllByText(/Open the portal page in your browser/)).toHaveLength(1);
     // No Import control without the host's import (a canvas-level chat).
     expect(screen.queryByText("Import dataset")).toBeNull();
   });
@@ -270,6 +310,7 @@ describe("AgentDatasetCandidatesCard — dev/132 the portal download and its Imp
         onRecordSelection={onRecordSelection}
       />,
     );
+    openHowTo("Setores GeoSampa");
     expect(screen.getByText("Import dataset")).toBeInTheDocument();
     const input = container.querySelector('input[type="file"]') as HTMLInputElement;
     const file = new File(["a,b\n1,2\n"], "setores.zip", { type: "application/zip" });
@@ -300,6 +341,7 @@ describe("AgentDatasetCandidatesCard — dev/132 the portal download and its Imp
         onRecordSelection={onRecordSelection}
       />,
     );
+    openHowTo("Setores GeoSampa");
     const input = container.querySelector('input[type="file"]') as HTMLInputElement;
     await act(async () => {
       fireEvent.change(input, {
@@ -347,7 +389,7 @@ describe("AgentDatasetCandidatesCard: the source recorded for its node", () => {
     expect(within(card).getByRole("button", { name: "Use this source" })).toBeDisabled();
   });
 
-  it("says Recorded with what was picked and where it comes from, in place of its rows and Use this source", () => {
+  it("says Recorded with what was picked, where it comes from and what comes of it, in place of its rows and Use this source", () => {
     render(
       <AgentDatasetCandidatesCard
         part={PART}
@@ -356,15 +398,18 @@ describe("AgentDatasetCandidatesCard: the source recorded for its node", () => {
         record={{
           status: "resolved",
           picks: [{ ...ROADS, provider: "City of Chicago" }],
-          next: "The Dataflow Builder goes on with its plan and builds the loader from this source.",
+          next: "The Dataflow Builder builds Load buildings from it.",
         }}
         waitsForPick={false}
       />,
     );
     const card = screen.getByRole("group", { name: "Sources for Load buildings" });
-    // What comes of the pick is the Source recorded turn's, right under the
-    // card in both chats: the card never says it again.
-    expect(within(card).getByRole("status")).toHaveTextContent(/^Recorded: Roads \(City of Chicago\)\.$/);
+    // What comes of the pick is the record's, as the server said it (board
+    // S05): the Source recorded turns are the agents' alone, so the chat says
+    // it once, here.
+    expect(within(card).getByRole("status")).toHaveTextContent(
+      /^Recorded: Roads \(City of Chicago\)\. The Dataflow Builder builds Load buildings from it\.$/,
+    );
     expect(within(card).queryByRole("button", { name: "Use this source" })).toBeNull();
     expect(within(card).queryAllByRole("checkbox")).toHaveLength(0);
   });
@@ -381,7 +426,7 @@ describe("AgentDatasetCandidatesCard: the source recorded for its node", () => {
     expect(screen.getByRole("status")).toHaveTextContent(/^Recorded: Roads \(City of Chicago\)\.$/);
   });
 
-  it("says a picked source that downloads for a paused plan is Recorded, from the Data Catalog, and leaves Resume to its Source recorded turn", () => {
+  it("says a picked source that downloads for a paused plan is Recorded, from the Data Catalog, and to press Resume once it lands", () => {
     render(
       <AgentDatasetCandidatesCard
         part={PART}
@@ -395,7 +440,9 @@ describe("AgentDatasetCandidatesCard: the source recorded for its node", () => {
       />,
     );
     // A catalog pick with no provider comes from the Data Catalog.
-    expect(screen.getByRole("status")).toHaveTextContent(/^Recorded: Roads \(Data Catalog\)\.$/);
+    expect(screen.getByRole("status")).toHaveTextContent(
+      /^Recorded: Roads \(Data Catalog\)\. It is downloading into the Data Catalog: once it lands, press Resume in the Dataflow Builder's chat to build the loader\.$/,
+    );
   });
 
   it("keeps its rows while the node still waits for the user's pick", () => {
@@ -413,14 +460,15 @@ describe("AgentDatasetCandidatesCard: the source recorded for its node", () => {
   });
 });
 
-// The Recorded line names the pick and where it comes from, and nothing of
-// what comes next: the record's `next` ends the Source recorded turn right
-// under the card in every chat that holds it, so the chat says it once. The
-// line promises no build either.
-describe("AgentDatasetCandidatesCard: the Recorded line leaves what happens next to its turn", () => {
+// The Recorded line names the pick and where it comes from, then what comes
+// of it in the server's words (the record's `next`, board S05), and none of
+// its own: the server never promises a build nobody starts, and neither does
+// the line. The Source recorded turns are the agents' alone, so the chat says
+// it once, here.
+describe("AgentDatasetCandidatesCard: the Recorded line says what comes next as the server said it", () => {
   const ROADS = { name: "Roads", sourceType: "catalog" as const, datasetId: "imported.def@1", installed: true };
 
-  it("a download no plan waits on says Recorded, and neither to Solve the node nor that a build comes", () => {
+  it("a download no plan waits on says Recorded, then to Solve the node once it lands, and that no build comes by itself", () => {
     render(
       <AgentDatasetCandidatesCard
         part={PART}
@@ -434,12 +482,13 @@ describe("AgentDatasetCandidatesCard: the Recorded line leaves what happens next
       />,
     );
     const status = screen.getByRole("status");
-    expect(status).toHaveTextContent(/^Recorded: Roads \(Data Catalog\)\.$/);
-    expect(status).not.toHaveTextContent("Solve the node once it lands");
+    expect(status).toHaveTextContent(
+      /^Recorded: Roads \(Data Catalog\)\. It is downloading into the Data Catalog: Solve the node once it lands\.$/,
+    );
     expect(status).not.toHaveTextContent("the loader is built from it once it lands");
   });
 
-  it("a pick no builder takes says Recorded, and promises no build", () => {
+  it("a pick no builder takes says Recorded, then what the user must do, and promises no build", () => {
     render(
       <AgentDatasetCandidatesCard
         part={PART}
@@ -453,8 +502,9 @@ describe("AgentDatasetCandidatesCard: the Recorded line leaves what happens next
       />,
     );
     const status = screen.getByRole("status");
-    expect(status).toHaveTextContent(/^Recorded: Roads \(Data Catalog\)\.$/);
-    expect(status).not.toHaveTextContent("No builder is attached to this node");
+    expect(status).toHaveTextContent(
+      /^Recorded: Roads \(Data Catalog\)\. No builder is attached to this node: Solve the node, or attach a Node Builder to it\.$/,
+    );
     expect(status).not.toHaveTextContent("The loader is built from this source");
   });
 });
@@ -491,8 +541,11 @@ describe("AgentDatasetCandidatesCard — a row Curio downloads", () => {
 
   it("offers only the download, never the portal steps", () => {
     render(<AgentDatasetCandidatesCard part={DISCOVERY} onImportDataset={jest.fn()} />);
-    expect(screen.getAllByText("Downloadable")).toHaveLength(2);
-    expect(screen.queryByText(/Download it from the portal/)).toBeNull();
+    expect(screen.getAllByRole("button", { name: "Download" })).toHaveLength(2);
+    // No warning of a portal download, and nothing to get by hand.
+    expect(screen.queryByText(/Manual download/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "How to get it" })).toBeNull();
+    expect(screen.queryByText(/Open the portal page in your browser/)).toBeNull();
     expect(screen.queryByText("Import dataset")).toBeNull();
   });
 
