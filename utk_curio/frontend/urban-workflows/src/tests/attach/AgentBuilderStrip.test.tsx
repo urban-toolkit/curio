@@ -695,7 +695,8 @@ describe("AgentBuilderStrip — dev/126 nodes awaiting a dataset selection", () 
     expect(screen.queryByRole("group", { name: "Nodes awaiting a dataset selection" })).toBeNull();
     expect(screen.queryByRole("button", { name: /Open Dataset Finder/ })).toBeNull();
     const show = screen.getByRole("button", { name: "Show its sources" });
-    expect(show).toHaveAttribute("data-tooltip", SHOW_SOURCES_HINT);
+    // With two waiting, its tooltip names the first, which it goes to.
+    expect(show).toHaveAttribute("data-tooltip", "a: Goes to its sources in this chat. Your pick builds it, and the plan goes on.");
     fireEvent.click(show);
     expect(onShowSources).toHaveBeenCalledWith("a");
     // A dataset-selection remedy is never rendered as a connection key.
