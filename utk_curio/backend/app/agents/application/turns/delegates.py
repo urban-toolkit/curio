@@ -467,9 +467,11 @@ def _asked_task(user_key: str, project_id: str, capability: str, inputs: dict, n
         )
         if node is None:
             return "find a source"
-        from utk_curio.backend.app.agents.application import dataset_resolution as agents_dataset_resolution
-
-        name = labels.on_a_word(agents_dataset_resolution.node_label(user_key, project_id, node), 120)
+        # Its title, else its template's label, read only when it has none.
+        title = node_names.saved_node_title(node)
+        name = labels.on_a_word(
+            title or labels.node_label(node, templates=node_names.template_labels(user_key, project_id)), 120,
+        )
     except Exception:  # noqa: BLE001 - the framing turn is written without the line's node
         log.warning("Could not name the node of a delegated search on %s", project_id, exc_info=True)
         return None
