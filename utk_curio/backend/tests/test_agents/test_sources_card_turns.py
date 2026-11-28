@@ -15,14 +15,17 @@ boards S04, S05 and S08).
 - A search another agent asks of a Dataset Finder is one quiet line in the
   Finder's chat ("Asked by the Dataflow Builder: find a source for Load
   boundaries."), and the card of the delegated run's trace is a run detail.
+- A pick Curio downloads keeps where its data comes from, which the card's
+  Recorded line names: the portal, not the Data Catalog it lands in.
 
 Each check here fails at its own assertion on the branch before this part
-(cb7f1cf23e).
+(cb7f1cf23e), and the last one on the branch before it was found (b91cb6cd28).
 """
 
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -30,7 +33,15 @@ from utk_curio.backend.app.agents.application import dataset_resolution as dr
 from utk_curio.backend.app.agents.application.solve import budgets
 from utk_curio.backend.app.agents.domain import content
 from utk_curio.backend.app.agents.repositories import sessions
+from utk_curio.backend.tests.test_agents import test_routes_turns as routes_turns
 from utk_curio.backend.tests.test_agents.test_dataset_discovery_routes import URL, _Harness
+from utk_curio.backend.tests.test_agents.test_fetch_delegation import (
+    CHICAGO,
+    PORTAL_OBSERVATION,
+    _discovery_harness,
+    _FakeDiscovery,
+    _select,
+)
 
 
 def _candidates(found: int) -> str:
@@ -168,3 +179,48 @@ class TestTheFindersChat:
         ]
         assert len(cards) == 1, cards
         assert cards[0].get("runDetails") is True, cards[0]
+
+
+class _NamedDiscovery(_FakeDiscovery):
+    """The Discovery Catalog as the pick sees it, its Chicago source named as
+    the catalog names it."""
+
+    def get_manifest(self, source_id):
+        if source_id != CHICAGO:
+            raise KeyError(source_id)
+        return SimpleNamespace(name="City of Chicago Data Portal", provider=SimpleNamespace(type="socrata"))
+
+
+class TestADownloadedPick:
+    """Dev check of #1652 (11-28): a Chicago Data Portal row the pick downloaded
+    read "Recorded: Libraries - Locations, Contact Information, and Usual Hours
+    of Operation (Data Catalog).". The card's Recorded line names where its
+    pick comes from (board S05), from the pick the record keeps: before, the
+    catalog pick a download became kept no word of the portal."""
+
+    @pytest.fixture(autouse=True)
+    def _no_builder(self, monkeypatch):
+        """The pick of a downloaded row starts the loader's builder: not here."""
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.application.solve.node_solve.solve_node_stream",
+            lambda *a, **k: None,
+        )
+
+    @pytest.mark.parametrize("landed", [True, False], ids=["downloaded", "still downloading"])
+    def test_it_keeps_the_portal_it_comes_from(self, client, user_and_token, tmp_curio, monkeypatch, landed):
+        user, token = user_and_token
+        if landed:
+            dataset_id = routes_turns.TestDatasetFinderTools()._seed_dataset(user, filename="areas.csv")
+            fake = _NamedDiscovery(started={"dataset": {"id": dataset_id}, "alreadyPresent": True})
+        else:
+            fake = _NamedDiscovery(started={"jobId": "job-1", "status": "queued"}, job={"status": "running"})
+        h, finder_id = _discovery_harness(client, user, token, monkeypatch, fake)
+        monkeypatch.setattr(
+            "utk_curio.backend.app.agents.application.verify.verify_external_source",
+            lambda url, **k: dict(PORTAL_OBSERVATION),
+        )
+        body = _select(h, finder_id, [{"lane": "external", "key": "https://data.example.org/areas.geojson"}]).get_json()
+        assert fake.calls == [(CHICAGO, "cauq-8yn6", None)], fake.calls
+        picks = (dr.source_record(h.spec(), h.load) or {}).get("picks") or []
+        assert [pick.get("provider") for pick in picks] == ["City of Chicago Data Portal"], picks
+        assert body["picks"][0].get("provider") == "City of Chicago Data Portal", body["picks"]
