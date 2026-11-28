@@ -332,6 +332,14 @@ class TestThePlansCard:
             timeout=15000,
         )
         expect(card.get_by_role("button", name="Undo")).to_be_visible()
+        # Board S02: a row's name wraps, so each shows whole and two rows of
+        # names that begin alike read apart.
+        cut = card.evaluate(
+            """(card) => Array.from(card.querySelectorAll('[data-curio-plan-row] > div > :first-child'))
+                .filter((name) => name.scrollWidth > name.clientWidth + 1)
+                .map((name) => name.textContent)"""
+        )
+        assert cut == [], f"the plan card cuts these names short: {cut}"
         save_workflow_test_screenshot(
             page, SCREENSHOT_STEM, test_name="plan_card",
             fit_reactflow=False,

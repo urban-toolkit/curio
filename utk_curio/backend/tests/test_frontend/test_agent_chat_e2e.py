@@ -310,6 +310,15 @@ class TestAgentChatGallery:
         expect(panel.get_by_text(VISIBLE_PROSE, exact=False)).to_be_visible(
             timeout=30000
         )
+        # Board A1: every agent's name on the rail shows whole, in the font the
+        # browser draws it in: no word of it is wider than its entry.
+        cut = panel.get_by_role("navigation", name="Agents on this dataflow").evaluate(
+            """(rail) => Array.from(rail.querySelectorAll('button span'))
+                .filter((name) => getComputedStyle(name).display === '-webkit-box')
+                .filter((name) => name.scrollWidth > name.clientWidth + 1)
+                .map((name) => `${name.textContent} (${name.scrollWidth}px in ${name.clientWidth}px)`)"""
+        )
+        assert cut == [], f"the rail cuts these names short: {cut}"
 
         if leg != "mint":
             # A report-only agent must NOT touch the canvas - that is its

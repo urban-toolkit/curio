@@ -185,6 +185,9 @@ def test_the_builders_chat_holds_the_loaders_candidates_and_its_pick_builds_the_
     # on by itself, so it offers no Resume.
     expect(panel.locator("[data-curio-plan-words]")).to_have_text(
         f"Paused · {LOADER_TITLE} needs a source", timeout=60000)
+    # Every word of it shows: the line cuts none (step 5.1's whole words).
+    width = panel.locator("[data-curio-plan-words]").evaluate("(words) => [words.scrollWidth, words.clientWidth]")
+    assert width[0] <= width[1] + 1, f"the plan line cuts its words: {width[0]}px of words in {width[1]}px"
     expect(panel.get_by_role("button", name="Show its sources", exact=True)).to_be_visible(timeout=60000)
     expect(panel.get_by_role("button", name="Resume", exact=True)).to_have_count(0)
     expect(card.get_by_role("button", name="Use this source", exact=True)).to_be_disabled()
@@ -252,12 +255,14 @@ def test_the_builders_chat_holds_the_loaders_candidates_and_its_pick_builds_the_
     dismiss_toasts(page)
     save_workflow_test_screenshot(page, SCREENSHOT_STEM, test_name="recorded", clip_selector=CHAT_PANEL_SELECTOR)
 
-    # The card itself, in its Recorded state in the Builder's chat.
+    # The card itself, in its Recorded state in the Builder's chat: its own
+    # frame, not the panel's, which the frame before holds.
     card.scroll_into_view_if_needed()
     expect(card).to_be_in_viewport()
     page.mouse.move(0, 0)
     save_workflow_test_screenshot(
-        page, SCREENSHOT_STEM, test_name="card-recorded", clip_selector=CHAT_PANEL_SELECTOR, sweep_toasts=True,
+        page, SCREENSHOT_STEM, test_name="card-recorded",
+        clip_selector=f"{CHAT_PANEL_SELECTOR} [data-curio-source-pick]", sweep_toasts=True,
     )
 
     # The Finder's own chat holds the same card, recorded the same way, and
