@@ -548,9 +548,18 @@ def _needs_install(pick: dict) -> bool:
     return pick.get("lane") == "catalog" and not pick.get("installed") and not pick.get("imported")
 
 
-def acquired_pick(row: dict, dataset_id: str) -> dict:
+def _from(origin: str | None) -> dict:
+    """A downloaded pick's ``provider``: where its data comes from (*origin*,
+    ``acquire._picked_from``), which the card's Recorded line names in place of
+    the Data Catalog it lands in."""
+    origin = str(origin or "").strip()[:120]
+    return {"provider": origin} if origin else {}
+
+
+def acquired_pick(row: dict, dataset_id: str, *, origin: str | None = None) -> dict:
     """The catalog pick a downloaded external row becomes. The file is in the
-    account store, so ``curio_data_path("<id>")`` resolves it like an import."""
+    account store, so ``curio_data_path("<id>")`` resolves it like an import.
+    *origin* is where its data comes from (:func:`_from`)."""
     return {
         "lane": "catalog",
         "name": str(row.get("name") or dataset_id)[:120],
@@ -559,12 +568,14 @@ def acquired_pick(row: dict, dataset_id: str) -> dict:
         "installed": False,
         "imported": True,
         "discoverySource": {"sourceId": row.get("sourceId"), "resourceId": row.get("resourceId")},
+        **_from(origin),
     }
 
 
-def acquiring_pick(row: dict, job_id: object) -> dict:
+def acquiring_pick(row: dict, job_id: object, *, origin: str | None = None) -> dict:
     """The catalog pick for a download still running. It waits like an
-    uninstalled dataset until ``settle_acquisitions`` sees the file held."""
+    uninstalled dataset until ``settle_acquisitions`` sees the file held.
+    *origin* is where its data comes from (:func:`_from`)."""
     return {
         "lane": "catalog",
         "name": str(row.get("name") or row.get("resourceId") or "")[:120],
@@ -572,6 +583,7 @@ def acquiring_pick(row: dict, job_id: object) -> dict:
         "installed": False,
         "discoverySource": {"sourceId": row.get("sourceId"), "resourceId": row.get("resourceId")},
         "acquiring": {"jobId": str(job_id or "")},
+        **_from(origin),
     }
 
 
@@ -607,7 +619,9 @@ def settle_acquisitions(spec: dict, held: dict) -> list[str]:
             discovered = pick.get("discoverySource") or {}
             dataset_id = held.get((discovered.get("sourceId"), discovered.get("resourceId")))
             if dataset_id:
-                picks[index] = acquired_pick({**discovered, "name": pick.get("name")}, dataset_id)
+                picks[index] = acquired_pick(
+                    {**discovered, "name": pick.get("name")}, dataset_id, origin=pick.get("provider"),
+                )
                 settled = True
         if not settled:
             continue

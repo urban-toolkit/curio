@@ -196,6 +196,37 @@ describe("the card's foot and its Recorded line", () => {
     );
   });
 
+  // Dev check of #1652 (11-28): a portal row the pick downloaded read "(Data
+  // Catalog)". The server keeps the portal on the pick it becomes.
+  it("names a pick Curio downloaded by the portal it came from, not the Data Catalog it lands in", () => {
+    const record = {
+      status: "resolved",
+      picks: [
+        {
+          name: "Libraries - Locations, Contact Information, and Usual Hours of Operation",
+          sourceType: "catalog",
+          datasetId: "imported.xefd08dde184e",
+          imported: true,
+          provider: "City of Chicago Data Portal",
+          discoverySource: { sourceId: "source.cityofchicago.data-portal@1", resourceId: "x8fc-8rcq" },
+        },
+      ],
+      next: "The Dataflow Builder builds CPL branches from it.",
+    } as unknown as AgentDatasetSourceRecord;
+    render(
+      <AgentDatasetCandidatesCard
+        part={PART}
+        nodeLabel="CPL branches"
+        onRecordSelection={jest.fn()}
+        record={record}
+        waitsForPick={false}
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      /^Recorded: Libraries - Locations, Contact Information, and Usual Hours of Operation \(City of Chicago Data Portal\)\. The Dataflow Builder builds CPL branches from it\.$/,
+    );
+  });
+
   it("says nothing of how to confirm it on a card with no pick of its own", () => {
     render(<AgentDatasetCandidatesCard part={PART} onComposePrompt={jest.fn()} />);
     expect(screen.queryByText(/select & confirm in chat/i)).toBeNull();

@@ -61,6 +61,28 @@ def _link_names_its_resource(row: dict) -> bool:
     )
 
 
+def _picked_from(service, row: dict) -> str | None:
+    """Where a downloaded row's data comes from, which the card's Recorded line
+    names: its Discovery Catalog source by the name the catalog gives it, such
+    as City of Chicago Data Portal; for a link downloaded as it is (Direct URL),
+    the row's provider, else the link's host. None when none can be read."""
+    from urllib.parse import urlparse
+
+    source_name, direct = "", False
+    try:
+        manifest = service.get_manifest(row["sourceId"])
+        source_name = str(getattr(manifest, "name", "") or "").strip()
+        direct = getattr(getattr(manifest, "provider", None), "type", None) == "direct"
+    except Exception:  # noqa: BLE001 - a source it cannot read leaves the row's own words
+        source_name = ""
+    if source_name and not direct:
+        return source_name[:120]
+    provider = str(row.get("provider") or "").strip()
+    if provider:
+        return provider[:120]
+    return urlparse(str(row.get("url") or row.get("resourceId") or "")).hostname or None
+
+
 def _acquire_confirmed_picks(rows: list[dict]) -> list[dict]:
     """Download every confirmed acquirable row through the Discovery Catalog, and record
     each as the catalog pick it becomes.
@@ -71,13 +93,14 @@ def _acquire_confirmed_picks(rows: list[dict]) -> list[dict]:
     builder writes fetch code, and here Curio fetches. Every download shares one
     wait. One that lands inside it becomes an imported catalog pick; one still
     running becomes a pick that is ``acquiring``, settled by
-    ``_settle_discovery_acquisitions`` once the dataset is held. Returns one summary
-    per download.
+    ``_settle_discovery_acquisitions`` once the dataset is held. Each pick keeps
+    where its data comes from (:func:`_picked_from`). Returns one summary per
+    download.
     """
     from utk_curio.backend.app.discovery.domain.errors import DiscoveryError
 
     summaries: list[dict] = []
-    running: list[tuple[int, dict, str]] = []
+    running: list[tuple[int, dict, str, str | None]] = []
     service = None
     for index, row in enumerate(rows):
         if row.get("lane") != "external" or not row.get("acquirable"):
@@ -93,27 +116,28 @@ def _acquire_confirmed_picks(rows: list[dict]) -> list[dict]:
             row["acquireError"] = str(exc)[:200]
             summaries.append({**summary, "status": "failed", "error": row["acquireError"]})
             continue
+        origin = _picked_from(service, row)
         if started.get("alreadyPresent"):
             dataset_id = (started.get("dataset") or {}).get("id")
-            rows[index] = agents_dataset_resolution.acquired_pick(row, dataset_id)
+            rows[index] = agents_dataset_resolution.acquired_pick(row, dataset_id, origin=origin)
             summaries.append({**summary, "status": "acquired", "datasetId": dataset_id,
                               "alreadyPresent": True})
         else:
-            running.append((index, summary, str(started.get("jobId") or "")))
+            running.append((index, summary, str(started.get("jobId") or ""), origin))
     deadline = time.monotonic() + _DISCOVERY_APPLY_WAIT_S
-    for index, summary, job_id in running:
+    for index, summary, job_id, origin in running:
         row = rows[index]
         outcome = _await_discovery_job(service, job_id, deadline=deadline) or {}
         status = outcome.get("status")
         dataset_id = outcome.get("datasetId") or (outcome.get("dataset") or {}).get("id")
         if status == "completed" and dataset_id:
-            rows[index] = agents_dataset_resolution.acquired_pick(row, dataset_id)
+            rows[index] = agents_dataset_resolution.acquired_pick(row, dataset_id, origin=origin)
             summaries.append({**summary, "status": "acquired", "datasetId": dataset_id})
         elif status in ("failed", "refused", "cancelled"):
             row["acquireError"] = str(outcome.get("error") or f"the download was {status}")[:200]
             summaries.append({**summary, "status": "failed", "error": row["acquireError"]})
         else:
-            rows[index] = agents_dataset_resolution.acquiring_pick(row, job_id)
+            rows[index] = agents_dataset_resolution.acquiring_pick(row, job_id, origin=origin)
             summaries.append({**summary, "status": "acquiring", "jobId": job_id})
     return summaries
 
