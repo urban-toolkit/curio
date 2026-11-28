@@ -280,7 +280,9 @@ def test_a_plan_lands_a_step_at_a_time_each_new_node_dragged_from_its_tile_as_it
 def test_a_plans_undo_puts_back_the_version_before_its_first_write(client, user_and_token, tmp_curio, monkeypatch):
     """The plan landed in four writes, each a point naming its change. Its
     Undo puts back the version the first one was made from: the loader and its
-    connection come back, Fetch and Clean go."""
+    connection come back, Fetch and Clean go. The Undo is a version of its own,
+    made from the one on the canvas, the plan's last, and named after what it
+    did; it names the version it put back."""
     from utk_curio.backend.app.collaboration import history
 
     user, token = user_and_token
@@ -298,8 +300,10 @@ def test_a_plans_undo_puts_back_the_version_before_its_first_write(client, user_
     flow = _saved(client, token, project)
     assert set(_by_id(flow)) == {"load", "sum"}, flow["nodes"]
     assert [(edge["source"], edge["target"]) for edge in flow["edges"]] == [("load", "sum")]
-    [put_back] = [point for point in history.points(_key(user), project) if point.get("kind") == "putBack"]
-    assert put_back["restores"] == steps[0]["parent"], (put_back, steps[0])
+    [undo] = [point for point in history.points(_key(user), project) if point.get("restores")]
+    assert undo["restores"] == steps[0]["parent"], (undo, steps[0])
+    assert (undo["kind"], undo["what"], undo["parent"]) == ("graph", "Undid Dataflow Builder's change", steps[-1]["id"]), (
+        undo, steps[-1])
 
 
 def test_a_plans_undo_is_refused_when_someone_changed_the_dataflow_between_its_writes(

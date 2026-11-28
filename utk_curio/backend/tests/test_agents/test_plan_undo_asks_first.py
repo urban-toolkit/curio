@@ -13,6 +13,13 @@ before; the change and its card keep the facts, which the card's Undone line
 names. With nobody's typing in the plan's nodes, it asks nothing. A change
 outside the plan's nodes still refuses it, with its reason, and never asks.
 
+The Undo is a version of its own made from the one on the canvas, as every
+other change is, named after the Undo ("Undid Dataflow Builder's change"):
+its result is the dataflow now without what the plan wrote, not the version
+before the plan, which it still names (``restores``). So the Provenance
+drawer lists every version on one line, the plan's, then the typing, then
+the Undo, and the version right above the Undo holds what was typed.
+
 alice owns the dataflow and asks every Undo; ana is an editor she invited.
 Each types through a tab of her own, a pycrdt doc syncing over a
 Flask-SocketIO test client (``test_collaboration/_ydoc_client.py``), as the
@@ -24,8 +31,10 @@ On main, where the Undo never asks, the three questions fail at their check
 of the answer, and the Undo anyway fails at its check that the version before
 the Undo holds the typing that was still under way: main ends no typing
 before it takes the nodes away, so the version before its put-back is the
-plan's own, and that typing never becomes a version. The other tests are
-guards, passing on main too.
+plan's own, and that typing never becomes a version. The Undo as a version
+on top fails at its check of the Undo's parent: on main it is a put-back of
+the version before the plan, which leaves the plan and the typing on a
+branch the drawer folds. The other tests are guards, passing on main too.
 """
 from __future__ import annotations
 
@@ -259,12 +268,12 @@ def test_undo_anyway_takes_the_plan_away_and_the_version_before_it_holds_what_wa
     """ana typed into Parks and left its editor; alice typed into Count, her
     typing still under way. Undo anyway takes the plan away and empties the
     goal it set, as an Undo with nothing typed does. The Provenance drawer's
-    list then ends with the Undo's put-back, and the version listed before it
-    holds what both typed: the Undo ended alice's typing first, a version of
-    its own. No version of that typing comes after the Undo, once her pause
-    is over. The answer, the change and its card in the chat keep who typed
-    where. On main the version before the put-back was the plan's own, and
-    alice's typing never became a version."""
+    list then ends with alice's Undo, and the version listed before it holds
+    what both typed: the Undo ended alice's typing first, a version of its
+    own. No version of that typing comes after the Undo, once her pause is
+    over. The answer, the change and its card in the chat keep who typed
+    where. On main the version before the Undo was ana's, and alice's typing
+    never became a version."""
     from utk_curio.backend.app.agents.application import attachments
     from utk_curio.backend.app.collaboration import dataflow_docs, history
     from utk_curio.backend.app.projects.services import _user_dir_key
@@ -288,8 +297,8 @@ def test_undo_anyway_takes_the_plan_away_and_the_version_before_it_holds_what_wa
     assert flow["edges"] == before["edges"]
     assert flow.get("task", "") == ""
     versions = _versions(client, token, project)
-    put_back, last = versions[-1], versions[-2]
-    assert (put_back["kind"], put_back["by"]["name"]) == ("putBack", "Alice"), versions[-3:]
+    undo, last = versions[-1], versions[-2]
+    assert undo["by"]["name"] == "Alice", versions[-3:]
     kept = history.dataflow_at(key, project, last["id"])
     typed_there = {title: (_code(kept, node_id) or "") for title, node_id in ids.items()}
     assert typed_there["Parks"].startswith("# ana's parks\n") and typed_there["Count"].startswith("# alice's count\n"), (
@@ -300,7 +309,7 @@ def test_undo_anyway_takes_the_plan_away_and_the_version_before_it_holds_what_wa
     clock.now += history.TYPING_PAUSE_S + 1
     dataflow_docs.flush_due(clock.now)
     alices_tab.set_presence({"editing": None})
-    assert _versions(client, token, project)[-1]["id"] == put_back["id"]
+    assert _versions(client, token, project)[-1]["id"] == undo["id"]
     alice_by, ana_by = {"account": str(alice.id), "name": "Alice"}, {"account": str(ana.id), "name": "Ana"}
     typed = [
         {"nodeId": ids["Parks"], "name": "Parks", "by": [ana_by]},
@@ -312,6 +321,47 @@ def test_undo_anyway_takes_the_plan_away_and_the_version_before_it_holds_what_wa
     record = attachments.get_attachment(dataflow_docs.live(key, project), att)
     [change] = [c for c in record.get("changes") or [] if c.get("changeId") == card["changeId"]]
     assert (change["status"], change.get("typed")) == ("undone", typed), change
+
+
+def test_a_plans_undo_is_a_version_on_top_of_the_one_before_it_named_after_the_undo(
+    app, client, db, user_and_token, tmp_curio, monkeypatch,
+):
+    """ana typed into Parks and left its editor, then alice undid the plan
+    anyway. Her Undo is a version made from the one on the canvas, ana's
+    typing, as any other change is: so the history is one line, which the
+    Provenance drawer lists with no branch folded, the plan, then the typing,
+    then the Undo. It is named after what it did, "Undid Dataflow Builder's
+    change", since what it leaves is the dataflow as it was without what the
+    plan wrote, not the version before the plan, which it still names
+    (``restores``). On main it was a put-back of the version before the plan,
+    made from that version, which left the plan and the typing on a branch."""
+    alice, token = user_and_token
+    project, att, card, before, ids = _landed(client, alice, token, monkeypatch)
+    _ana(db, alice, project)
+    _types(_tab(app, ANA, project), ids["Parks"], "# ana's parks\n")
+
+    undone = _asks(client, token, project, att, card["changeId"], anyway=True)
+
+    assert undone.status_code == 200, undone.get_json()
+    assert undone.get_json()["status"] == "undone", undone.get_json()
+    assert _by_id(_saved(client, token, project)) == _by_id(before)
+    listed = client.get(f"/api/projects/{project}/history", headers=_auth(token)).get_json()
+    versions = listed["versions"]
+    plan, typing, undo = versions[-3], versions[-2], versions[-1]
+    assert (typing["kind"], typing["what"]) == ("typing", "Ana edited"), versions[-3:]
+    assert listed["head"] == undo["id"], listed["head"]
+    assert undo.get("parent") == typing["id"], (
+        f"the Undo was made from {undo.get('parent')}, not from the version on the canvas, ana's typing "
+        f"{typing['id']}: {versions[-4:]}")
+    # One line from the first version to the Undo: no version left on a branch.
+    by_id = {version["id"]: version for version in versions}
+    line, at = [], listed["head"]
+    while at is not None and at not in line:
+        line.append(at)
+        at = (by_id.get(at) or {}).get("parent")
+    assert line[::-1] == [version["id"] for version in versions], (line[::-1], versions)
+    assert (undo["kind"], undo["what"], undo["by"]["name"]) == ("graph", "Undid Dataflow Builder's change", "Alice"), undo
+    assert undo.get("restores") == plan.get("parent"), (undo, plan)
 
 
 def test_undo_asks_nothing_when_nobody_typed_into_the_plans_nodes(
