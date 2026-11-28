@@ -933,7 +933,7 @@ def _typed_into(user_key: str, project_id: str, first: dict, own: list, dataflow
             for node in own if node in typed]
 
 
-def _undo_plan(user_key: str, project_id: str, attachment_id: str, change: dict, by: dict, *,
+def _undo_plan(user_key: str, project_id: str, attachment_id: str, change: dict, by: dict, label: str, *,
                anyway: bool = False) -> tuple[list[dict], list[dict]]:
     """Undo a plan an agent landed: put back the dataflow as the plan's first
     write found it (``history.dataflow_found_by``), the version before it with
@@ -954,7 +954,10 @@ def _undo_plan(user_key: str, project_id: str, attachment_id: str, change: dict,
     only when the plan set it (``goalSet``) and it still reads what the plan
     wrote, checked again in the put-back's own transaction (its ``expect``),
     and stays as it is otherwise. The planner's session goes back to what it
-    was.
+    was. The Undo is a version of its own made from the one on the canvas,
+    as any other change is, named *label* ("Undid Dataflow Builder's
+    change"), since what it leaves is the dataflow now without what the plan
+    wrote, not the version before the plan, which it names (``restores``).
 
     When people typed into the plan's nodes since it landed and still hold
     what they typed (:func:`_typed_into`), it asks first, once nothing refuses
@@ -996,7 +999,9 @@ def _undo_plan(user_key: str, project_id: str, attachment_id: str, change: dict,
             # The goal goes back only while it still reads the plan's as the put-back writes.
             return history.put_back(user_key, project_id, first["parent"], by, keep=sorted(keep),
                                     target=copy.deepcopy(before),
-                                    expect={"task": change["goalSet"]} if goal_back else None, dry_run=dry_run)
+                                    expect={"task": change["goalSet"]} if goal_back else None, dry_run=dry_run,
+                                    version={"kind": history.GRAPH, "what": label, "restores": first["parent"],
+                                             "by": by})
 
         try:
             # A put-back that would be refused is refused before anything is asked or ended.
