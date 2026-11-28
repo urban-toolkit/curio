@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from flask import g
 from flask import jsonify
+from flask import request
 
 from utk_curio.backend.app.agents import service as agents_services
 from utk_curio.backend.app.agents.routes.common import Dataflow
@@ -93,11 +94,16 @@ def undo_change(project_id: str, attachment_id: str, change_id: str):
     back, a new node goes with its connections, settings get their old
     values back, a plan puts back the version before it. A 409 says who
     changed it after, when someone did: then nothing is undone. The answer
-    carries the canvas mutations a canvas no doc binds takes."""
+    carries the canvas mutations a canvas no doc binds takes. A plan whose
+    nodes people typed into since it landed is not undone: the answer says
+    who typed where (``typed``), the change still applied, until the body
+    asks to undo it anyway (``{"anyway": true}``)."""
+    body = request.get_json(silent=True)
+    anyway = isinstance(body, dict) and body.get("anyway") is True
     try:
         flow = _dataflow(project_id)
         payload = agents_services.undo_change(
-            flow.key, flow.project_id, attachment_id, change_id, g.user
+            flow.key, flow.project_id, attachment_id, change_id, g.user, anyway=anyway
         )
     except projects_repo.NotFoundError:
         return _error("project not found", 404)

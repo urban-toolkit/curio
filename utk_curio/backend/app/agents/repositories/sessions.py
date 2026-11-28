@@ -235,17 +235,19 @@ def update_proposal_status(
 
 
 def update_change_status(
-    user_key: str, project_id: str, session_id: str, change_id: str, status: str
+    user_key: str, project_id: str, session_id: str, change_id: str, status: str, *, also: dict | None = None
 ) -> bool:
     """Set the status of one persisted change part: an agent's change, undone
-    from the chat. Returns True when a part was updated."""
-    return _set_part_status(user_key, project_id, session_id, "change", "changeId", change_id, status)
+    from the chat, with the fields *also* gives (a plan undone anyway: who
+    typed where). Returns True when a part was updated."""
+    return _set_part_status(user_key, project_id, session_id, "change", "changeId", change_id, status, also=also)
 
 
 def _set_part_status(user_key: str, project_id: str, session_id: str, kind: str, key: str,
-                     part_id: str, status: str) -> bool:
+                     part_id: str, status: str, *, also: dict | None = None) -> bool:
     """Set *status* on the transcript's parts of type *kind* whose *key* is
-    *part_id*; whether any changed. A change is told (:func:`when_changed`)."""
+    *part_id*, with the fields *also* gives; whether any changed. A change
+    is told (:func:`when_changed`)."""
     path = _session_path(user_key, project_id, session_id)
     if not path.exists():
         return False
@@ -261,6 +263,7 @@ def _set_part_status(user_key: str, project_id: str, session_id: str, kind: str,
                     and part.get("status") != status
                 ):
                     part["status"] = status
+                    part.update(also or {})
                     changed = True
         if not changed:
             return False

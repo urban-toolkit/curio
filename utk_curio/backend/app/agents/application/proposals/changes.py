@@ -43,7 +43,9 @@ history's checked writes:
   would change it, as a scenario made after the plan that holds one of its
   nodes. The goal never holds it back, changed between its writes or after
   them: it goes back only when the plan set it and it still reads what the
-  plan wrote as the put-back writes.
+  plan wrote as the put-back writes. When people typed into the plan's
+  nodes since it landed, it asks first, changing nothing, and goes ahead
+  only when asked again to undo anyway (``plans._undo_plan``).
 
 A change kept from before a Spatial Join's operation and output were its
 widgets, when the join kept them at ``metadata.spatialJoin``, is undone as the
@@ -378,11 +380,17 @@ def _last_by(user_key: str, project_id: str, node_id: str) -> dict | None:
     return (found[-1] or {}).get("by") if found else None
 
 
-def undo(user_key: str, project_id: str, attachment_id: str, change_id: str, user) -> dict:
+def undo(user_key: str, project_id: str, attachment_id: str, change_id: str, user, *, anyway: bool = False) -> dict:
     """Undo the change *change_id* the attachment's agent made, as *user*'s
     own change, by its kind (the module's docstring). Answers the change's
     new status and the canvas mutations a tab no doc binds takes; refused
-    with a 409 whose message names who changed what it changed."""
+    with a 409 whose message names who changed what it changed.
+
+    A plan's Undo asks first when people typed into the plan's nodes since
+    it landed (``plans._undo_plan``): it answers the change as it is,
+    applied, with who typed where (``typed``), and changes nothing. *anyway*
+    takes the plan away all the same; the change and its card keep who
+    typed where, which the card's Undone line says."""
     spec = agents_spec_reads._live_spec_or_404(user_key, project_id)
     record = agents_spec_reads._record_or_404(spec, attachment_id)
     change = next((c for c in record.get("changes") or [] if isinstance(c, dict) and c.get("changeId") == change_id), None)
@@ -392,17 +400,30 @@ def undo(user_key: str, project_id: str, attachment_id: str, change_id: str, use
         raise AgentServiceError("this change was undone already", 409)
     by = _by(user)
     label = f"Undid {_agent_name(user_key, record)}'s change"
-    undo_kind = {CONTENT: _undo_content, NODE: _undo_node, SETTINGS: _undo_settings, PLAN: _undo_plan}[change["kind"]]
-    canvas = undo_kind(user_key, project_id, attachment_id, change, by, label)
+    typed: list[dict] = []
+    if change["kind"] == PLAN:
+        try:
+            canvas, typed = agents_plans._undo_plan(user_key, project_id, attachment_id, change, by, anyway=anyway)
+        except agents_plans.AsksFirst as asks:
+            # Nothing was undone: the card asks first, naming who typed where.
+            return {"attachmentId": attachment_id, "changeId": change_id, "status": APPLIED, "canvas": [],
+                    "typed": asks.typed}
+    else:
+        undo_kind = {CONTENT: _undo_content, NODE: _undo_node, SETTINGS: _undo_settings}[change["kind"]]
+        canvas = undo_kind(user_key, project_id, attachment_id, change, by, label)
     fresh = agents_spec_reads._live_spec_or_404(user_key, project_id)
     fresh_record = agents_spec_reads._record_or_404(fresh, attachment_id)
     for kept in fresh_record.get("changes") or []:
         if isinstance(kept, dict) and kept.get("changeId") == change_id:
             kept["status"] = UNDONE
+            if typed:
+                kept["typed"] = copy.deepcopy(typed)
     dataflow_docs.write(user_key, project_id, fresh, agents_spec_reads._person(user_key, "undo"))
     if isinstance(fresh_record.get("sessionId"), str):
-        sessions.update_change_status(user_key, project_id, fresh_record["sessionId"], change_id, UNDONE)
-    return {"attachmentId": attachment_id, "changeId": change_id, "status": UNDONE, "canvas": canvas}
+        sessions.update_change_status(user_key, project_id, fresh_record["sessionId"], change_id, UNDONE,
+                                      also={"typed": copy.deepcopy(typed)} if typed else None)
+    return {"attachmentId": attachment_id, "changeId": change_id, "status": UNDONE, "canvas": canvas,
+            **({"typed": typed} if typed else {})}
 
 
 def _undo_content(user_key, project_id, attachment_id, change, by, label) -> list[dict]:
@@ -486,7 +507,3 @@ def _join_change_from_before(node: dict, change: dict) -> tuple[bool, list[dict]
            for widget in normalize_widgets(metadata.get("widgets"))}
     holds = all(now.get(name) == after[name] for name in names)
     return holds, [{"widgets": {name: back[name] for name in names}}]
-
-
-def _undo_plan(user_key, project_id, attachment_id, change, by, label) -> list[dict]:
-    return agents_plans._undo_plan(user_key, project_id, attachment_id, change, by)

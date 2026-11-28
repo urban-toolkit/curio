@@ -906,7 +906,35 @@ def _only_the_plan_between(user_key: str, project_id: str, earlier: dict, later:
     return _outside_the_plan(left, change, fields) == _outside_the_plan(found, change, fields)
 
 
-def _undo_plan(user_key: str, project_id: str, attachment_id: str, change: dict, by: dict) -> list[dict]:
+class AsksFirst(Exception):
+    """A plan's Undo that asks before it takes the plan away: people typed
+    into the plan's nodes since it landed (``typed``, :func:`_typed_into`).
+    Nothing was undone."""
+
+    def __init__(self, typed: list[dict]):
+        super().__init__("Someone typed into this plan's nodes after it landed; nothing was undone.")
+        self.typed = typed
+
+
+def _typed_into(user_key: str, project_id: str, first: dict, own: list, dataflow: dict) -> list[dict]:
+    """The plan's nodes *own* people typed into since its first write
+    (*first*) and still hold what they typed (``history.typed_since``), in
+    the plan's order: each named as its header names it, told apart from the
+    others named with it (``told_apart``), with who typed into it, by account
+    and name. What the plan's Undo asks about first."""
+    typed = history.typed_since(user_key, project_id, first, own)
+    if not typed:
+        return []
+    nodes = {n.get("id"): n for n in dataflow.get("nodes") or [] if isinstance(n, dict) and n.get("id") in typed}
+    names = told_apart(nodes, templates=node_names.template_labels(user_key, project_id),
+                       scenarios=scenario_names(dataflow))
+    return [{"nodeId": node, "name": names.get(node) or node,
+             "by": [{"account": str(by.get("account")), "name": by.get("name")} for by in typed[node]]}
+            for node in own if node in typed]
+
+
+def _undo_plan(user_key: str, project_id: str, attachment_id: str, change: dict, by: dict, *,
+               anyway: bool = False) -> tuple[list[dict], list[dict]]:
     """Undo a plan an agent landed: put back the dataflow as the plan's first
     write found it (``history.dataflow_found_by``), the version before it with
     what a person changed since that made no version of its own, such as a
@@ -926,7 +954,15 @@ def _undo_plan(user_key: str, project_id: str, attachment_id: str, change: dict,
     only when the plan set it (``goalSet``) and it still reads what the plan
     wrote, checked again in the put-back's own transaction (its ``expect``),
     and stays as it is otherwise. The planner's session goes back to what it
-    was."""
+    was.
+
+    When people typed into the plan's nodes since it landed and still hold
+    what they typed (:func:`_typed_into`), it asks first, once nothing refuses
+    it: :class:`AsksFirst`, with nothing changed and no typing ended. *anyway*
+    goes ahead. Before the put-back, the typing under way in the plan's nodes
+    ends, each its own version (``history.end_typing_in``), so the version
+    before the Undo holds what was typed. Answers the canvas mutations a tab
+    no doc binds takes, and who typed where (none when no one did)."""
     from utk_curio.backend.app.projects import storage as projects_storage
 
     change_id = change["changeId"]
@@ -954,11 +990,25 @@ def _undo_plan(user_key: str, project_id: str, attachment_id: str, change: dict,
         keep = (set(before) | set(current)) - _ONE_BY_ONE - wrote
         if not goal_back:
             keep.add("task")
-        try:
+        own = [str(node) for node in change.get("nodeIds") or []]
+
+        def put_back(*, dry_run: bool = False) -> dict:
             # The goal goes back only while it still reads the plan's as the put-back writes.
-            put = history.put_back(user_key, project_id, first["parent"], by, keep=sorted(keep),
-                                   target=copy.deepcopy(before),
-                                   expect={"task": change["goalSet"]} if goal_back else None)
+            return history.put_back(user_key, project_id, first["parent"], by, keep=sorted(keep),
+                                    target=copy.deepcopy(before),
+                                    expect={"task": change["goalSet"]} if goal_back else None, dry_run=dry_run)
+
+        try:
+            # A put-back that would be refused is refused before anything is asked or ended.
+            put_back(dry_run=True)
+            if not anyway:
+                typed = _typed_into(user_key, project_id, first, own, current)
+                if typed:
+                    raise AsksFirst(typed)
+            # What anyone typed in the plan's nodes is a version before the Undo takes them away.
+            history.end_typing_in(user_key, project_id, own)
+            typed = _typed_into(user_key, project_id, first, own, current)
+            put = put_back()
         except history.KeptWouldChange as exc:
             # A field it keeps names what it takes away: a scenario made after the plan holding its node.
             raise _changed_after(points[steps[-1] + 1:], change_id) from exc
@@ -990,7 +1040,7 @@ def _undo_plan(user_key: str, project_id: str, attachment_id: str, change: dict,
         # The goal it took back, for a canvas no doc binds, which takes it
         # while its own goal still reads the plan's.
         **({"task": goal_before, "goalSet": change["goalSet"]} if goal_back else {}),
-    }]
+    }], typed
 
 
 def _changed_after(points: list, change_id: str) -> AgentServiceError:
